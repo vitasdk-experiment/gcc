@@ -10393,8 +10393,11 @@ grokdeclarator (const cp_declarator *declarator,
 	      && (decl_context == NORMAL || decl_context == FIELD)
 	      && at_function_scope_p ()
 	      && variably_modified_type_p (type, NULL_TREE))
-	    /* Force evaluation of the SAVE_EXPR.  */
-	    finish_expr_stmt (TYPE_SIZE (type));
+	    {
+	      TYPE_NAME (type) = build_decl (UNKNOWN_LOCATION, TYPE_DECL,
+					     NULL_TREE, type);
+	      add_decl_expr (TYPE_NAME (type));
+	    }
 
 	  if (declarator->kind == cdk_reference)
 	    {
@@ -11419,7 +11422,8 @@ grokdeclarator (const cp_declarator *declarator,
 	      }
 	    else if (current_function_decl)
 	      {
-		/* FIXME need arm citation */
+		/* 7.1.1: There can be no static function declarations within a
+		   block.  */
 		error ("cannot declare static function inside another function");
 		invalid_static = 1;
 	      }

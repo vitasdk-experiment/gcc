@@ -788,7 +788,8 @@ extern void check_function_arguments_recurse (void (*)
 					       unsigned HOST_WIDE_INT),
 					      void *, tree,
 					      unsigned HOST_WIDE_INT);
-extern bool check_builtin_function_arguments (tree, int, tree *);
+extern bool check_builtin_function_arguments (location_t, vec<location_t>,
+					      tree, int, tree *);
 extern void check_function_format (tree, int, tree *);
 extern tree handle_unused_attribute (tree *, tree, tree, int, bool *);
 extern tree handle_format_attribute (tree *, tree, tree, int, bool *);
@@ -1261,6 +1262,15 @@ enum c_omp_clause_split
   C_OMP_CLAUSE_SPLIT_TASKLOOP = C_OMP_CLAUSE_SPLIT_FOR
 };
 
+enum c_omp_region_type
+{
+  C_ORT_OMP			= 1 << 0,
+  C_ORT_CILK			= 1 << 1,
+  C_ORT_ACC			= 1 << 2,
+  C_ORT_DECLARE_SIMD		= 1 << 3,
+  C_ORT_OMP_DECLARE_SIMD	= C_ORT_OMP | C_ORT_DECLARE_SIMD
+};
+
 extern tree c_finish_omp_master (location_t, tree);
 extern tree c_finish_omp_taskgroup (location_t, tree);
 extern tree c_finish_omp_critical (location_t, tree, tree, tree);
@@ -1278,7 +1288,7 @@ extern bool c_omp_check_loop_iv (tree, tree, walk_tree_lh);
 extern bool c_omp_check_loop_iv_exprs (location_t, tree, tree, tree, tree,
 				       walk_tree_lh);
 extern tree c_finish_oacc_wait (location_t, tree, tree);
-extern tree c_oacc_split_loop_clauses (tree, tree *);
+extern tree c_oacc_split_loop_clauses (tree, tree *, bool);
 extern void c_omp_split_clauses (location_t, enum tree_code, omp_clause_mask,
 				 tree, tree *);
 extern tree c_omp_declare_simd_clauses_to_numbers (tree, tree);

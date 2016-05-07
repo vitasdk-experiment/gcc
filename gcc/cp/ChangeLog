@@ -1,3 +1,92 @@
+2016-05-05  Jakub Jelinek  <jakub@redhat.com>
+
+	* parser.c (cp_parser_selection_statement): For RID_SWITCH,
+	pass if_p instead of NULL to cp_parser_implicitly_scoped_statement.
+
+2016-05-04  Marek Polacek  <polacek@redhat.com>
+
+	* parser.c (cp_parser_selection_statement): Replace OPT_Wparentheses
+	with OPT_Wdangling_else.
+
+2016-05-03  Martin Sebor  <msebor@redhat.com>
+
+	PR c++/66561
+	* tree.c (builtin_valid_in_constant_expr_p): Treat BUILT_IN_FILE,
+	BUILT_IN_FUNCTION, and BUILT_IN_LINE as constant expressions.
+
+2016-05-03  Marek Polacek  <polacek@redhat.com>
+
+	PR c/70859
+	* call.c (build_cxx_call): Pass location and vNULL down to
+	check_builtin_function_arguments.
+
+2016-05-03  Richard Biener  <rguenther@suse.de>
+
+	* Make-lang.in (cc1plus-checksum.c): For stage-final re-use
+	the checksum from the previous stage.
+
+2016-05-02  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/62314
+	* typeck.c (finish_class_member_access_expr): When
+	giving a hint about a possibly-misspelled member name,
+	add a fix-it replacement hint.
+
+2016-05-02  Cesar Philippidis  <cesar@codesourcery.com>
+
+	* cp-tree.h (finish_omp_clauses): Update prototype.
+	* parser.c (cp_parser_oacc_all_clauses): Update call to
+	finish_omp_clauses.
+	(cp_parser_omp_all_clauses): Likewise.
+	(cp_parser_omp_for_loop): Likewise.
+	(cp_omp_split_clauses): Likewise.
+	(cp_parser_oacc_cache): Likewise.
+	(cp_parser_oacc_loop): Likewise.
+	(cp_parser_omp_declare_target):
+	(cp_parser_cilk_simd_all_clauses): Likewise.
+	(cp_parser_cilk_for): Likewise.
+	* pt.c (tsubst_omp_clauses): Replace allow_fields and declare_simd
+	arguments with enum c_omp_region_type ort.
+	(tsubst_omp_clauses): Update calls to finish_omp_clauses.
+	(tsubst_omp_attribute): Update calls to tsubst_omp_clauses.
+	(tsubst_omp_for_iterator): Update calls to finish_omp_clauses.
+	(tsubst_expr): Update calls to tsubst_omp_clauses.
+	* semantics.c (finish_omp_clauses): Replace bool arguments
+	allow_fields, declare_simd, and is_cilk with bitmask ort.
+	(finish_omp_for): Update call to finish_omp_clauses.
+
+2016-05-02  David Malcolm  <dmalcolm@redhat.com>
+
+	PR c++/62314
+	* parser.c (cp_parser_class_head): Capture the start location;
+	use it to emit a fix-it insertion hint when complaining
+	about missing "template <> " in explicit specializations.
+
+2016-05-02  Richard Sandiford  <richard.sandiford@arm.com>
+
+	* init.c (build_new_1): Use shift operators instead of wi:: shifts.
+
+2016-05-02  Richard Biener  <rguenther@suse.de>
+
+	* decl.c (grokdeclarator): Properly insert a DECL_EXPR for
+	anonymous VLAs.
+
+2016-04-29  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/66644
+	* class.c (check_field_decl): Remove final int* parameter, change
+	the return type to bool; fix logic in order not to reject multiple
+	initialized fields in anonymous struct.
+	(check_field_decls): Adjust call.
+
+2016-04-29  Cesar Philippidis  <cesar@codesourcery.com>
+
+	PR middle-end/70626
+	* parser.c (cp_parser_oacc_loop): Don't augment mask with
+	OACC_LOOP_CLAUSE_MASK.
+	(cp_parser_oacc_kernels_parallel): Update call to
+	c_oacc_split_loop_clauses.
+
 2016-04-28  Jason Merrill  <jason@redhat.com>
 
 	Implement C++17 [[nodiscard]] attribute.
