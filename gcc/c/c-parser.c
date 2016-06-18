@@ -3430,6 +3430,7 @@ c_parser_direct_declarator (c_parser *parser, bool type_seen_p, c_dtr_syn kind,
       && c_parser_next_token_is (parser, CPP_OPEN_SQUARE))
     {
       struct c_declarator *inner = build_id_declarator (NULL_TREE);
+      inner->id_loc = c_parser_peek_token (parser)->location;
       return c_parser_direct_declarator_inner (parser, *seen_id, inner);
     }
 
@@ -4396,6 +4397,7 @@ c_parser_initelt (c_parser *parser, struct obstack * braced_init_obstack)
       /* Old-style structure member designator.  */
       set_init_label (c_parser_peek_token (parser)->location,
 		      c_parser_peek_token (parser)->value,
+		      c_parser_peek_token (parser)->location,
 		      braced_init_obstack);
       /* Use the colon as the error location.  */
       pedwarn (c_parser_peek_2nd_token (parser)->location, OPT_Wpedantic,
@@ -4425,6 +4427,7 @@ c_parser_initelt (c_parser *parser, struct obstack * braced_init_obstack)
 	      if (c_parser_next_token_is (parser, CPP_NAME))
 		{
 		  set_init_label (des_loc, c_parser_peek_token (parser)->value,
+				  c_parser_peek_token (parser)->location,
 				  braced_init_obstack);
 		  c_parser_consume_token (parser);
 		}
@@ -7707,8 +7710,9 @@ c_parser_postfix_expression (c_parser *parser)
 	       accept sub structure and sub array references.  */
 	    if (c_parser_next_token_is (parser, CPP_NAME))
 	      {
+		c_token *comp_tok = c_parser_peek_token (parser);
 		offsetof_ref = build_component_ref
-		  (loc, offsetof_ref, c_parser_peek_token (parser)->value);
+		  (loc, offsetof_ref, comp_tok->value, comp_tok->location);
 		c_parser_consume_token (parser);
 		while (c_parser_next_token_is (parser, CPP_DOT)
 		       || c_parser_next_token_is (parser,
@@ -7734,9 +7738,10 @@ c_parser_postfix_expression (c_parser *parser)
 			    c_parser_error (parser, "expected identifier");
 			    break;
 			  }
+			c_token *comp_tok = c_parser_peek_token (parser);
 			offsetof_ref = build_component_ref
-			  (loc, offsetof_ref,
-			   c_parser_peek_token (parser)->value);
+			  (loc, offsetof_ref, comp_tok->value,
+			   comp_tok->location);
 			c_parser_consume_token (parser);
 		      }
 		    else
@@ -8213,7 +8218,7 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 {
   struct c_expr orig_expr;
   tree ident, idx;
-  location_t sizeof_arg_loc[3];
+  location_t sizeof_arg_loc[3], comp_loc;
   tree sizeof_arg[3];
   unsigned int literal_zero_mask;
   unsigned int i;
@@ -8327,7 +8332,11 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 	  c_parser_consume_token (parser);
 	  expr = default_function_array_conversion (expr_loc, expr);
 	  if (c_parser_next_token_is (parser, CPP_NAME))
-	    ident = c_parser_peek_token (parser)->value;
+	    {
+	      c_token *comp_tok = c_parser_peek_token (parser);
+	      ident = comp_tok->value;
+	      comp_loc = comp_tok->location;
+	    }
 	  else
 	    {
 	      c_parser_error (parser, "expected identifier");
@@ -8339,7 +8348,8 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 	  start = expr.get_start ();
 	  finish = c_parser_peek_token (parser)->get_finish ();
 	  c_parser_consume_token (parser);
-	  expr.value = build_component_ref (op_loc, expr.value, ident);
+	  expr.value = build_component_ref (op_loc, expr.value, ident,
+					    comp_loc);
 	  set_c_expr_source_range (&expr, start, finish);
 	  expr.original_code = ERROR_MARK;
 	  if (TREE_CODE (expr.value) != COMPONENT_REF)
@@ -8359,7 +8369,11 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 	  c_parser_consume_token (parser);
 	  expr = convert_lvalue_to_rvalue (expr_loc, expr, true, false);
 	  if (c_parser_next_token_is (parser, CPP_NAME))
-	    ident = c_parser_peek_token (parser)->value;
+	    {
+	      c_token *comp_tok = c_parser_peek_token (parser);
+	      ident = comp_tok->value;
+	      comp_loc = comp_tok->location;
+	    }
 	  else
 	    {
 	      c_parser_error (parser, "expected identifier");
@@ -8375,7 +8389,7 @@ c_parser_postfix_expression_after_primary (c_parser *parser,
 					    build_indirect_ref (op_loc,
 								expr.value,
 								RO_ARROW),
-					    ident);
+					    ident, comp_loc);
 	  set_c_expr_source_range (&expr, start, finish);
 	  expr.original_code = ERROR_MARK;
 	  if (TREE_CODE (expr.value) != COMPONENT_REF)
@@ -10601,6 +10615,8 @@ c_parser_omp_variable_list (c_parser *parser,
 	  switch (kind)
 	    {
 	    case OMP_CLAUSE__CACHE_:
+	      /* The OpenACC cache directive explicitly only allows "array
+		 elements or subarrays".  */
 	      if (c_parser_peek_token (parser)->type != CPP_OPEN_SQUARE)
 		{
 		  c_parser_error (parser, "expected %<[%>");
@@ -10621,9 +10637,12 @@ c_parser_omp_variable_list (c_parser *parser,
 		      t = error_mark_node;
 		      break;
 		    }
-		  tree ident = c_parser_peek_token (parser)->value;
+
+		  c_token *comp_tok = c_parser_peek_token (parser);
+		  tree ident = comp_tok->value;
+		  location_t comp_loc = comp_tok->location;
 		  c_parser_consume_token (parser);
-		  t = build_component_ref (op_loc, t, ident);
+		  t = build_component_ref (op_loc, t, ident, comp_loc);
 		}
 	      /* FALLTHROUGH  */
 	    case OMP_CLAUSE_DEPEND:
@@ -10661,25 +10680,6 @@ c_parser_omp_variable_list (c_parser *parser,
 		    {
 		      t = error_mark_node;
 		      break;
-		    }
-
-		  if (kind == OMP_CLAUSE__CACHE_)
-		    {
-		      if (TREE_CODE (low_bound) != INTEGER_CST
-			  && !TREE_READONLY (low_bound))
-			{
-			  error_at (clause_loc,
-				    "%qD is not a constant", low_bound);
-			  t = error_mark_node;
-			}
-
-		      if (TREE_CODE (length) != INTEGER_CST
-			  && !TREE_READONLY (length))
-			{
-			  error_at (clause_loc,
-				    "%qD is not a constant", length);
-			  t = error_mark_node;
-			}
 		    }
 
 		  t = tree_cons (low_bound, length, t);
@@ -12128,7 +12128,20 @@ c_parser_omp_clause_schedule (c_parser *parser, tree list)
 		  "schedule %<auto%> does not take "
 		  "a %<chunk_size%> parameter");
       else if (TREE_CODE (TREE_TYPE (t)) == INTEGER_TYPE)
-	OMP_CLAUSE_SCHEDULE_CHUNK_EXPR (c) = t;
+	{
+	  /* Attempt to statically determine when the number isn't
+	     positive.  */
+	  tree s = fold_build2_loc (loc, LE_EXPR, boolean_type_node, t,
+				    build_int_cst (TREE_TYPE (t), 0));
+	  protected_set_expr_location (s, loc);
+	  if (s == boolean_true_node)
+	    {
+	      warning_at (loc, 0,
+			  "chunk size value must be positive");
+	      t = integer_one_node;
+	    }
+	  OMP_CLAUSE_SCHEDULE_CHUNK_EXPR (c) = t;
+	}
       else
 	c_parser_error (parser, "expected integer expression");
 
@@ -13602,6 +13615,7 @@ c_parser_oacc_declare (c_parser *parser)
 
       switch (OMP_CLAUSE_MAP_KIND (t))
 	{
+	case GOMP_MAP_FIRSTPRIVATE_POINTER:
 	case GOMP_MAP_FORCE_ALLOC:
 	case GOMP_MAP_FORCE_TO:
 	case GOMP_MAP_FORCE_DEVICEPTR:
@@ -13983,25 +13997,24 @@ c_parser_oacc_routine (c_parser *parser, enum pragma_context context)
       c_parser_consume_token (parser);
 
       c_token *token = c_parser_peek_token (parser);
-
       if (token->type == CPP_NAME && (token->id_kind == C_ID_ID
 				      || token->id_kind == C_ID_TYPENAME))
 	{
 	  decl = lookup_name (token->value);
 	  if (!decl)
-	    {
-	      error_at (token->location, "%qE has not been declared",
-			token->value);
-	      decl = error_mark_node;
-	    }
+	    error_at (token->location, "%qE has not been declared",
+		      token->value);
+	  c_parser_consume_token (parser);
 	}
       else
 	c_parser_error (parser, "expected function name");
 
-      if (token->type != CPP_CLOSE_PAREN)
-	c_parser_consume_token (parser);
-
-      c_parser_skip_until_found (parser, CPP_CLOSE_PAREN, 0);
+      if (!decl
+	  || !c_parser_require (parser, CPP_CLOSE_PAREN, "expected %<)%>"))
+	{
+	  c_parser_skip_to_pragma_eol (parser, false);
+	  return;
+	}
     }
 
   /* Build a chain of clauses.  */
@@ -15100,7 +15113,9 @@ c_parser_omp_for (location_t loc, c_parser *parser,
 
   strcat (p_name, " for");
   mask |= OMP_FOR_CLAUSE_MASK;
-  if (cclauses)
+  /* parallel for{, simd} disallows nowait clause, but for
+     target {teams distribute ,}parallel for{, simd} it should be accepted.  */
+  if (cclauses && (mask & (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_MAP)) == 0)
     mask &= ~(OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_NOWAIT);
   /* Composite distribute parallel for{, simd} disallows ordered clause.  */
   if ((mask & (OMP_CLAUSE_MASK_1 << PRAGMA_OMP_CLAUSE_DIST_SCHEDULE)) != 0)

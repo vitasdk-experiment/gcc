@@ -3211,6 +3211,9 @@ FP or VSX register to perform ISA 2.07 float ops or NO_REGS.
 @item wz
 Floating point register if the LFIWZX instruction is enabled or NO_REGS.
 
+@item wB
+Signed 5-bit constant integer that can be loaded into an altivec register.
+
 @item wD
 Int constant that is the element number of the 64-bit scalar in a vector.
 
@@ -5554,7 +5557,9 @@ This pattern is not allowed to @code{FAIL}.
 @item @samp{floor@var{m}2}
 Store the largest integral value not greater than operand 1 in operand 0.
 Both operands have mode @var{m}, which is a scalar or vector
-floating-point mode.
+floating-point mode.  If @option{-ffp-int-builtin-inexact} is in
+effect, the ``inexact'' exception may be raised for noninteger
+operands; otherwise, it may not.
 
 This pattern is not allowed to @code{FAIL}.
 
@@ -5562,7 +5567,9 @@ This pattern is not allowed to @code{FAIL}.
 @item @samp{btrunc@var{m}2}
 Round operand 1 to an integer, towards zero, and store the result in
 operand 0.  Both operands have mode @var{m}, which is a scalar or
-vector floating-point mode.
+vector floating-point mode.  If @option{-ffp-int-builtin-inexact} is
+in effect, the ``inexact'' exception may be raised for noninteger
+operands; otherwise, it may not.
 
 This pattern is not allowed to @code{FAIL}.
 
@@ -5570,7 +5577,10 @@ This pattern is not allowed to @code{FAIL}.
 @item @samp{round@var{m}2}
 Round operand 1 to the nearest integer, rounding away from zero in the
 event of a tie, and store the result in operand 0.  Both operands have
-mode @var{m}, which is a scalar or vector floating-point mode.
+mode @var{m}, which is a scalar or vector floating-point mode.  If
+@option{-ffp-int-builtin-inexact} is in effect, the ``inexact''
+exception may be raised for noninteger operands; otherwise, it may
+not.
 
 This pattern is not allowed to @code{FAIL}.
 
@@ -5578,7 +5588,9 @@ This pattern is not allowed to @code{FAIL}.
 @item @samp{ceil@var{m}2}
 Store the smallest integral value not less than operand 1 in operand 0.
 Both operands have mode @var{m}, which is a scalar or vector
-floating-point mode.
+floating-point mode.  If @option{-ffp-int-builtin-inexact} is in
+effect, the ``inexact'' exception may be raised for noninteger
+operands; otherwise, it may not.
 
 This pattern is not allowed to @code{FAIL}.
 

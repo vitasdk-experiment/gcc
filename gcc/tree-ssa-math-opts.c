@@ -2051,6 +2051,9 @@ init_symbolic_number (struct symbolic_number *n, tree src)
 {
   int size;
 
+  if (! INTEGRAL_TYPE_P (TREE_TYPE (src)))
+    return false;
+
   n->base_addr = n->offset = n->alias_set = n->vuse = NULL_TREE;
 
   /* Set up the symbolic number N by setting each byte to a value between 1 and
@@ -2161,10 +2164,12 @@ perform_symbolic_merge (gimple *source_stmt1, struct symbolic_number *n1,
   struct symbolic_number *n_start;
 
   tree rhs1 = gimple_assign_rhs1 (source_stmt1);
-  if (TREE_CODE (rhs1) == BIT_FIELD_REF)
+  if (TREE_CODE (rhs1) == BIT_FIELD_REF
+      && TREE_CODE (TREE_OPERAND (rhs1, 0)) == SSA_NAME)
     rhs1 = TREE_OPERAND (rhs1, 0);
   tree rhs2 = gimple_assign_rhs1 (source_stmt2);
-  if (TREE_CODE (rhs2) == BIT_FIELD_REF)
+  if (TREE_CODE (rhs2) == BIT_FIELD_REF
+      && TREE_CODE (TREE_OPERAND (rhs2, 0)) == SSA_NAME)
     rhs2 = TREE_OPERAND (rhs2, 0);
 
   /* Sources are different, cancel bswap if they are not memory location with

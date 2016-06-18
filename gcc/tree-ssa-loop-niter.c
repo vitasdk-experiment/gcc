@@ -2954,8 +2954,6 @@ record_estimate (struct loop *loop, tree bound, const widest_int &i_bound,
     realistic = false;
   else
     gcc_checking_assert (i_bound == wi::to_widest (bound));
-  if (!upper && !realistic)
-    return;
 
   /* If we have a guaranteed upper bound, record it in the appropriate
      list, unless this is an !is_exit bound (i.e. undefined behavior in
@@ -2977,7 +2975,7 @@ record_estimate (struct loop *loop, tree bound, const widest_int &i_bound,
   /* If statement is executed on every path to the loop latch, we can directly
      infer the upper bound on the # of iterations of the loop.  */
   if (!dominated_by_p (CDI_DOMINATORS, loop->latch, gimple_bb (at_stmt)))
-    return;
+    upper = false;
 
   /* Update the number of iteration estimates according to the bound.
      If at_stmt is an exit then the loop latch is executed at most BOUND times,
@@ -3723,8 +3721,26 @@ estimate_numbers_of_iterations_loop (struct loop *loop)
     return;
 
   loop->estimate_state = EST_AVAILABLE;
-  /* Force estimate compuation but leave any existing upper bound in place.  */
-  loop->any_estimate = false;
+
+  /* If we have a measured profile, use it to estimate the number of
+     iterations.  Normally this is recorded by branch_prob right after
+     reading the profile.  In case we however found a new loop, record the
+     information here.
+
+     Explicitly check for profile status so we do not report
+     wrong prediction hitrates for guessed loop iterations heuristics.
+     Do not recompute already recorded bounds - we ought to be better on
+     updating iteration bounds than updating profile in general and thus
+     recomputing iteration bounds later in the compilation process will just
+     introduce random roundoff errors.  */
+  if (!loop->any_estimate
+      && loop->header->count != 0
+      && profile_status_for_fn (cfun) >= PROFILE_READ)
+    {
+      gcov_type nit = expected_loop_iterations_unbounded (loop);
+      bound = gcov_type_to_wide_int (nit);
+      record_niter_bound (loop, bound, true, false);
+    }
 
   /* Ensure that loop->nb_iterations is computed if possible.  If it turns out
      to be constant, we avoid undefined behavior implied bounds and instead
@@ -3757,15 +3773,6 @@ estimate_numbers_of_iterations_loop (struct loop *loop)
   discover_iteration_bound_by_body_walk (loop);
 
   maybe_lower_iteration_bound (loop);
-
-  /* If we have a measured profile, use it to estimate the number of
-     iterations.  */
-  if (loop->header->count != 0)
-    {
-      gcov_type nit = expected_loop_iterations_unbounded (loop) + 1;
-      bound = gcov_type_to_wide_int (nit);
-      record_niter_bound (loop, bound, true, false);
-    }
 
   /* If we know the exact number of iterations of this loop, try to
      not break code with undefined behavior by not recording smaller
@@ -3850,6 +3857,41 @@ max_loop_iterations_int (struct loop *loop)
   return hwi_nit < 0 ? -1 : hwi_nit;
 }
 
+/* Sets NIT to an likely upper bound for the maximum number of executions of the
+   latch of the LOOP.  If we have no reliable estimate, the function returns
+   false, otherwise returns true.  */
+
+bool
+likely_max_loop_iterations (struct loop *loop, widest_int *nit)
+{
+  /* When SCEV information is available, try to update loop iterations
+     estimate.  Otherwise just return whatever we recorded earlier.  */
+  if (scev_initialized_p ())
+    estimate_numbers_of_iterations_loop (loop);
+
+  return get_likely_max_loop_iterations (loop, nit);
+}
+
+/* Similar to max_loop_iterations, but returns the estimate only
+   if it fits to HOST_WIDE_INT.  If this is not the case, or the estimate
+   on the number of iterations of LOOP could not be derived, returns -1.  */
+
+HOST_WIDE_INT
+likely_max_loop_iterations_int (struct loop *loop)
+{
+  widest_int nit;
+  HOST_WIDE_INT hwi_nit;
+
+  if (!likely_max_loop_iterations (loop, &nit))
+    return -1;
+
+  if (!wi::fits_shwi_p (nit))
+    return -1;
+  hwi_nit = nit.to_shwi ();
+
+  return hwi_nit < 0 ? -1 : hwi_nit;
+}
+
 /* Returns an estimate for the number of executions of statements
    in the LOOP.  For statements before the loop exit, this exceeds
    the number of execution of the latch by one.  */
@@ -3869,7 +3911,7 @@ estimated_stmt_executions_int (struct loop *loop)
   return snit < 0 ? -1 : snit;
 }
 
-/* Sets NIT to the estimated maximum number of executions of the latch of the
+/* Sets NIT to the maximum number of executions of the latch of the
    LOOP, plus one.  If we have no reliable estimate, the function returns
    false, otherwise returns true.  */
 
@@ -3879,6 +3921,25 @@ max_stmt_executions (struct loop *loop, widest_int *nit)
   widest_int nit_minus_one;
 
   if (!max_loop_iterations (loop, nit))
+    return false;
+
+  nit_minus_one = *nit;
+
+  *nit += 1;
+
+  return wi::gtu_p (*nit, nit_minus_one);
+}
+
+/* Sets NIT to the estimated maximum number of executions of the latch of the
+   LOOP, plus one.  If we have no likely estimate, the function returns
+   false, otherwise returns true.  */
+
+bool
+likely_max_stmt_executions (struct loop *loop, widest_int *nit)
+{
+  widest_int nit_minus_one;
+
+  if (!likely_max_loop_iterations (loop, nit))
     return false;
 
   nit_minus_one = *nit;

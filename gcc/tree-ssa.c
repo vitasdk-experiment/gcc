@@ -1222,14 +1222,19 @@ maybe_rewrite_mem_ref_base (tree *tp, bitmap suitable_for_renaming)
 static tree
 non_rewritable_mem_ref_base (tree ref)
 {
-  tree base = ref;
+  tree base;
 
   /* A plain decl does not need it set.  */
   if (DECL_P (ref))
     return NULL_TREE;
 
-  while (handled_component_p (base))
-    base = TREE_OPERAND (base, 0);
+  if (! (base = CONST_CAST_TREE (strip_invariant_refs (ref))))
+    {
+      base = get_base_address (ref);
+      if (DECL_P (base))
+	return base;
+      return NULL_TREE;
+    }
 
   /* But watch out for MEM_REFs we cannot lower to a
      VIEW_CONVERT_EXPR or a BIT_FIELD_REF.  */
@@ -1287,6 +1292,18 @@ non_rewritable_lvalue_p (tree lhs)
       if (integer_zerop (TREE_OPERAND (lhs, 1))
 	  && DECL_P (decl)
 	  && DECL_SIZE (decl) == TYPE_SIZE (TREE_TYPE (lhs))
+	  /* If the dynamic type of the decl has larger precision than
+	     the decl itself we can't use the decls type for SSA rewriting.  */
+	  && ((! INTEGRAL_TYPE_P (TREE_TYPE (decl))
+	       || compare_tree_int (DECL_SIZE (decl),
+				    TYPE_PRECISION (TREE_TYPE (decl))) == 0)
+	      || (INTEGRAL_TYPE_P (TREE_TYPE (lhs))
+		  && (TYPE_PRECISION (TREE_TYPE (decl))
+		      >= TYPE_PRECISION (TREE_TYPE (lhs)))))
+	  /* Make sure we are not re-writing non-float copying into float
+	     copying as that can incur normalization.  */
+	  && (! FLOAT_TYPE_P (TREE_TYPE (decl))
+	      || types_compatible_p (TREE_TYPE (lhs), TREE_TYPE (decl)))
 	  && (TREE_THIS_VOLATILE (decl) == TREE_THIS_VOLATILE (lhs)))
 	return false;
 
@@ -1617,9 +1634,16 @@ execute_update_addresses_taken (void)
 		if (gimple_assign_lhs (stmt) != lhs
 		    && !useless_type_conversion_p (TREE_TYPE (lhs),
 						   TREE_TYPE (rhs)))
-		  rhs = fold_build1 (VIEW_CONVERT_EXPR,
-				     TREE_TYPE (lhs), rhs);
-
+		  {
+		    if (gimple_clobber_p (stmt))
+		      {
+			rhs = build_constructor (TREE_TYPE (lhs), NULL);
+			TREE_THIS_VOLATILE (rhs) = 1;
+		      }
+		    else
+		      rhs = fold_build1 (VIEW_CONVERT_EXPR,
+					 TREE_TYPE (lhs), rhs);
+		  }
 		if (gimple_assign_lhs (stmt) != lhs)
 		  gimple_assign_set_lhs (stmt, lhs);
 
