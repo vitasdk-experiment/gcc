@@ -3699,7 +3699,9 @@ explicit @code{ALLOCATE} statement. If an error occurs and @var{STAT} is a
 and starting the error termination.  If no error occurs and @var{STAT} is
 present, it shall be set to zero. Otherwise, it shall be set to a positive
 value and, if not-@code{NULL}, @var{ERRMSG} shall be set to a string describing
-the failure. The function shall return a pointer to the requested memory
+the failure. The parameter @var{NUM_COMPS} gives the number of allocatable or
+pointer components when the memory allocated is to store a derived type, else it
+has to be zero. The function shall return a pointer to the requested memory
 for the local image as a call to @code{malloc} would do.
 
 For @code{CAF_REGTYPE_COARRAY_STATIC} and @code{CAF_REGTYPE_COARRAY_ALLOC},
@@ -3710,7 +3712,7 @@ size or one for a scalar.
 
 @item @emph{Syntax}:
 @code{void *caf_register (size_t size, caf_register_t type, caf_token_t *token,
-int *stat, char *errmsg, int errmsg_len)}
+int *stat, char *errmsg, int errmsg_len, int num_comps)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
@@ -3723,6 +3725,9 @@ may be NULL
 @item @var{errmsg} @tab intent(out) When an error occurs, this will be set to
 an error message; may be NULL
 @item @var{errmsg_len} @tab the buffer size of errmsg.
+@item @var{num_comps} @tab when the memory allocated stores an object of derived
+type, then @var{num_comps} gives the number of allocatable or pointer components
+in that type, else zero.
 @end multitable
 
 @item @emph{NOTES}

@@ -98,7 +98,9 @@ int _gfortran_caf_this_image (int);
 int _gfortran_caf_num_images (int, int);
 
 void *_gfortran_caf_register (size_t, caf_register_t, caf_token_t *, int *,
-			      char *, int);
+			      char *, int, int);
+void *_gfortran_caf_register_component (caf_token_t, caf_register_t, size_t,
+					int, int *, char *, int);
 void _gfortran_caf_deregister (caf_token_t *, int *, char *, int);
 
 void _gfortran_caf_sync_all (int *, char *, int);

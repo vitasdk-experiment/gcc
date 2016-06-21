@@ -96,7 +96,8 @@ _gfortran_caf_num_images (int distance __attribute__ ((unused)),
 
 void *
 _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
-			int *stat, char *errmsg, int errmsg_len)
+			int *stat, char *errmsg, int errmsg_len,
+			int num_alloc_comps __attribute__ ((unused)))
 {
   void *local;
 
@@ -142,6 +143,48 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
       tmp->token = *token;
       caf_static_list = tmp;
     }
+  return local;
+}
+
+
+void *
+_gfortran_caf_register_component (caf_token_t token __attribute__ ((unused)),
+				  caf_register_t type, size_t size,
+				  int comp_id __attribute__ ((unused)),
+				  int *stat, char *errmsg, int errmsg_len)
+{
+  void *local;
+
+  if (type == CAF_REGTYPE_LOCK_STATIC || type == CAF_REGTYPE_LOCK_ALLOC
+      || type == CAF_REGTYPE_CRITICAL || type == CAF_REGTYPE_EVENT_STATIC
+      || type == CAF_REGTYPE_EVENT_ALLOC)
+    local = calloc (size, sizeof (bool));
+  else
+    local = malloc (size);
+
+  if (unlikely (local == NULL))
+    {
+      const char msg[] = "Failed to allocate component";
+      if (stat)
+	{
+	  *stat = 1;
+	  if (errmsg_len > 0)
+	    {
+	      int len = ((int) sizeof (msg) > errmsg_len) ? errmsg_len
+							  : (int) sizeof (msg);
+	      memcpy (errmsg, msg, len);
+	      if (errmsg_len > len)
+		memset (&errmsg[len], ' ', errmsg_len-len);
+	    }
+	  return NULL;
+	}
+      else
+	  caf_runtime_error (msg);
+    }
+
+  if (stat)
+    *stat = 0;
+
   return local;
 }
 

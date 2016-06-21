@@ -713,7 +713,7 @@ gfc_allocate_using_malloc (stmtblock_t * block, tree pointer,
 static void
 gfc_allocate_using_lib (stmtblock_t * block, tree pointer, tree size,
 			tree token, tree status, tree errmsg, tree errlen,
-			bool lock_var, bool event_var)
+			tree num_alloc_comps, bool lock_var, bool event_var)
 {
   tree tmp, pstat;
 
@@ -734,7 +734,7 @@ gfc_allocate_using_lib (stmtblock_t * block, tree pointer, tree size,
 
   size = fold_convert (size_type_node, size);
   tmp = build_call_expr_loc (input_location,
-	     gfor_fndecl_caf_register, 6,
+	     gfor_fndecl_caf_register, 7,
 	     fold_build2_loc (input_location,
 			      MAX_EXPR, size_type_node, size,
 			      build_int_cst (size_type_node, 1)),
@@ -742,7 +742,7 @@ gfc_allocate_using_lib (stmtblock_t * block, tree pointer, tree size,
 			    lock_var ? GFC_CAF_LOCK_ALLOC
                             : event_var ? GFC_CAF_EVENT_ALLOC
 					: GFC_CAF_COARRAY_ALLOC),
-	     token, pstat, errmsg, errlen);
+	     token, pstat, errmsg, errlen, num_alloc_comps);
 
   tmp = fold_build2_loc (input_location, MODIFY_EXPR,
 			 TREE_TYPE (pointer), pointer,
@@ -803,7 +803,7 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
   if (flag_coarray == GFC_FCOARRAY_LIB
       && gfc_expr_attr (expr).codimension)
     {
-      tree cond;
+      tree cond, num_alloc_comps;
       bool lock_var = expr->ts.type == BT_DERIVED
 		      && expr->ts.u.derived->from_intmod
 			 == INTMOD_ISO_FORTRAN_ENV
@@ -822,8 +822,14 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 	size = fold_build2_loc (input_location, TRUNC_DIV_EXPR, size_type_node,
 				size, TYPE_SIZE_UNIT (ptr_type_node));
 
+      if (expr->ts.type == BT_DERIVED)
+	num_alloc_comps = build_int_cst (integer_type_node,
+			      gfc_get_num_alloc_ptr_comps (expr->ts.u.derived));
+      else
+	num_alloc_comps = integer_zero_node;
       gfc_allocate_using_lib (&alloc_block, mem, size, token, status,
-			      errmsg, errlen, lock_var, event_var);
+			      errmsg, errlen, num_alloc_comps, lock_var,
+			      event_var);
 
       if (status != NULL_TREE)
 	{
