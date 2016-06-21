@@ -1,3 +1,86 @@
+2016-06-21  Jakub Jelinek  <jakub@redhat.com>
+
+	PR tree-optimization/71588
+	* gcc.dg/pr71558.c: New test.
+
+2016-06-21  Senthil Kumar Selvaraj  <senthil_kumar.selvaraj@atmel.com>
+
+	* c-c++-common/pr68657-1.c: Require ptr32plus support.
+	* c-c++-common/pr68657-2.c: Likewise.
+	* c-c++-common/pr68657-3.c: Likewise.
+	* gcc.dg/torture/pr69714.c: Require int32plus support.
+	* gcc.dg/torture/pr70025.c: Likewise.
+	* gcc.dg/torture/pr70083.c: Likewise.
+	* gcc.dg/torture/pr70542.c: Likewise.
+	* gcc.dg/torture/pr70935.c: Require ptr32plus support.
+
+2016-06-20  Joseph Myers  <joseph@codesourcery.com>
+
+	PR c/71601
+	* gcc.dg/dfp/usual-arith-conv-bad-3.c: New test.
+
+2016-06-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/71581
+	* gcc.dg/pr71581.c: New test.
+
+	PR rtl-optimization/71591
+	* gcc.dg/cpp/pr71591.c: New test.
+
+2016-06-20   David B. Robins  <gcc@davidrobins.net>
+
+	PR target/71571
+	* g++.dg/torture/pr71571.C: New test.
+
+2016-06-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/71559
+	* gcc.target/i386/sse2-pr71559.c: New test.
+	* gcc.target/i386/avx-pr71559.c: New test.
+	* gcc.target/i386/avx512f-pr71559.c: New test.
+
+2016-06-20  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/71194
+	* gfortran.dg/pointer_remapping_10.f90: New.
+
+2016-06-20  David Malcolm  <dmalcolm@redhat.com>
+
+	* g++.dg/diagnostic/string-literal-concat.C: New test case.
+
+2016-06-20  Martin Sebor  <msebor@redhat.com>
+
+	PR c/69507
+	* gnu89-const-expr-1.c: Avoid diagnosing __alignof__ as not conforming.
+	* gnu90-const-expr-1.c: Same.
+	* gnu99-const-expr-1.c: Same.
+	* gnu99-static-1.c: Same.
+
+2016-06-20  Renlin Li  <renlin.li@arm.com>
+
+	* gcc.dg/tree-ssa/attr-hotcold-2.c: Fix syntax errors.
+
+2016-06-20  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* gcc.target/aarch64/vcvt_f64_1.c: New.
+	* gcc.target/aarch64/vcvt_n_f64_1.c: New.
+	* gcc.target/aarch64/vrecp_f64_1.c: New.
+
+2016-06-20  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+
+	* gfortran.dg/common_align_2.f90: Use "alignment" instead of
+	"alignement".
+
+2016-06-20  Georg-Johann Lay  <avr@gjlay.de>
+
+	PR target/71103
+	* gcc.target/avr/torture/pr71103-2.c: New test.
+
+2016-06-19 Martin Sebor  <msebor@redhat.com>
+
+	PR c/69507
+	* gcc.dg/alignof.c: New test.
+
 2016-06-17  Paolo Carlini  <paolo.carlini@oracle.com>
 
 	* g++.dg/cpp0x/constexpr-specialization.C: Adjust for dg-message

@@ -1,3 +1,128 @@
+2016-06-21  Jakub Jelinek  <jakub@redhat.com>
+
+	PR tree-optimization/71588
+	* tree-ssa-strlen.c (valid_builtin_call): New function.
+	(adjust_last_stmt, handle_builtin_memset, strlen_optimize_stmt): Use
+	it.
+
+2016-06-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/71581
+	* tree-ssa-uninit.c (warn_uninit): If EXPR and VAR are NULL,
+	see if T isn't anonymous SSA_NAME with COMPLEX_EXPR created
+	for conversion of scalar user var to complex type and use the
+	underlying SSA_NAME_VAR in that case.  If EXPR is still NULL,
+	punt.
+
+	PR rtl-optimization/71591
+	* toplev.c (toplev::run_self_tests): If no_backend, complain and
+	don't run any tests.
+
+2016-06-20  Hans-Peter Nilsson  <hp@axis.com>
+
+	PR target/71571
+	* config/cris/cris.c (cris_asm_output_mi_thunk): Add missing "ba"
+	delay-slot "nop" for PIC with CRIS v32.  Also add missing leading
+	space for PIC with non-v32 and the common non-PIC "jump".
+
+2016-06-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/71559
+	* config/i386/i386.c (ix86_fp_cmp_code_to_pcmp_immediate): Fix up
+	returned values and add UN*/LTGT/*ORDERED cases with values matching
+	D operand modifier on vcmp for AVX.
+
+2016-06-20  Wilco Dijkstra  <wdijkstr@arm.com>
+
+	* config/aarch64/aarch64.opt
+	(mpc-relative-literal-loads): Rename internal option name.
+	* config/aarch64/aarch64.c
+	(aarch64_nopcrelative_literal_loads): Rename to
+	aarch64_pcrelative_literal_loads.
+	(aarch64_expand_mov_immediate): Likewise.
+	(aarch64_secondary_reload): Likewise.
+	(aarch64_can_use_per_function_literal_pools_p): Likewise.
+	(aarch64_override_options_after_change_1): Rename and simplify logic.
+	(aarch64_classify_symbol): Merge large model checks into switch,
+	remove pc-relative load check.
+
+2016-06-20  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* config/arm/aarch-cost-tables.h (cortexa53_extra_costs): Make FP
+	costs relative to the cost of a register move.
+
+2016-06-20  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* config/aarch64/arm_neon.h (vcvt_n_f64_s64): New.
+	(vcvt_n_f64_u64): Likewise.
+	(vcvt_n_s64_f64): Likewise.
+	(vcvt_n_u64_f64): Likewise.
+	(vcvt_f64_s64): Likewise.
+	(vrecpe_f64): Likewise.
+	(vcvt_f64_u64): Likewise.
+	(vrecps_f64): Likewise.
+
+2016-06-20  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* config/aarch64/aarch64.md
+	(<FCVT_F2FIXED:fcvt_fixed_insn><GPF:mode>3): Add attributes to
+	iterators.
+	(<FCVT_FIXED2F:fcvt_fixed_insn><GPI:mode>3): Likewise.  Correct
+	attributes.
+	* config/aarch64/aarch64-builtins.c
+	(aarch64_types_binop_uss_qualifiers): Delete.
+	(TYPES_BINOP_USS): Likewise.
+	(aarch64_types_binop_sus_qualifiers): Likewise.
+	(TYPES_BINOP_SUS): Likewise.
+	(aarch64_types_fcvt_from_unsigned_qualifiers): New.
+	(TYPES_FCVTIMM_SUS): Likewise.
+	* config/aarch64/aarch64-simd-builtins.def (scvtf): Use SHIFTIMM
+	rather than BINOP.
+	(ucvtf): Use FCVTIMM_SUS rather than BINOP_SUS.
+	(fcvtzs): Use SHIFTIMM rather than BINOP.
+	(fcvtzu): Use SHIFTIMM_USS rather than BINOP_USS.
+
+2016-06-20  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* config/arm/aarch-cost-tables.h (cortexa57_extra_costs): Make FP
+	costs relative to the cost of a register move.
+
+2016-06-20  Wilco Dijkstra  <wdijkstr@arm.com>
+
+	* config/aarch64/aarch64.c (aarch64_modes_tieable_p):
+	Allow scalar/single vector modes to be tieable.
+
+2016-06-20  Wilco Dijkstra  <wdijkstr@arm.com>
+
+	* config/arm/cortex-a57.md (cortex_a57_fp_cpys): Add fcsel.
+
+2016-06-20  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+
+	* params.def (PARAM_ALIGN_LOOP_ITERATIONS): Use "alignment" instead of
+	"alignement".
+	* tree.h (TYPE_ALIGN): Likewise.
+
+2016-06-20  Georg-Johann Lay  <avr@gjlay.de>
+
+	PR target/71103
+	* config/avr/avr.md (movqi): Handle loading subreg:qi (const).
+
+2016-06-20  Georg-Johann Lay  <avr@gjlay.de>
+
+	* config/avr/avr.c (avr_print_operand): Fix "format not a string
+	literal" build warnings.
+	(avr_print_operand_address): Dito.
+
+2016-06-19  David Edelsohn  <dje.gcc@gmail.com>
+
+	PR target/71375
+	* config/rs6000/aix51.h (TARGET_EXTRA_BUILTINS): Define as 0.
+	* config/rs6000/aix43.h (TARGET_EXTRA_BUILTINS): Same.
+
+2016-06-18  John David Anglin  <danglin@gcc.gnu.org>
+
+	* config/pa/pa.h (TARGET_LONG_PIC_PCREL_CALL): Remove.
+
 2016-06-18  Eric Botcazou  <ebotcazou@adacore.com>
 
 	PR bootstrap/71435
