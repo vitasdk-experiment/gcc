@@ -2922,6 +2922,8 @@ bool gfc_is_associate_pointer (gfc_symbol*);
 gfc_symbol * gfc_find_dt_in_generic (gfc_symbol *);
 gfc_formal_arglist *gfc_sym_get_dummy_args (gfc_symbol *);
 
+int gfc_get_num_alloc_ptr_comps (gfc_symbol *derived);
+
 /* intrinsic.c -- true if working in an init-expr, false otherwise.  */
 extern bool gfc_init_expr_flag;
 

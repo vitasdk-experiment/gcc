@@ -4956,3 +4956,27 @@ gfc_sym_get_dummy_args (gfc_symbol *sym)
 
   return dummies;
 }
+
+/* Get the number of allocatable or pointer components in a derived type.  */
+
+int
+gfc_get_num_alloc_ptr_comps (gfc_symbol *derived)
+{
+  int num = 0;
+  gfc_component *comp = derived->components;
+
+  do
+  {
+    while (comp)
+    {
+      if (comp->attr.allocatable || comp->attr.pointer)
+	++num;
+      comp = comp->next;
+    }
+    /* Also catch the components of the super type.  */
+    derived = gfc_get_derived_super_type (derived);
+  }
+  while (derived);
+
+  return num;
+}

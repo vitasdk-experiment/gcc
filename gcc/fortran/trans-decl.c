@@ -3517,9 +3517,9 @@ gfc_build_builtin_function_decls (void)
 		   2, integer_type_node, integer_type_node);
 
       gfor_fndecl_caf_register = gfc_build_library_function_decl_with_spec (
-	get_identifier (PREFIX("caf_register")), "...WWW", pvoid_type_node, 6,
+	get_identifier (PREFIX("caf_register")), "...WWW.", pvoid_type_node, 7,
         size_type_node, integer_type_node, ppvoid_type_node, pint_type,
-        pchar_type_node, integer_type_node);
+	pchar_type_node, integer_type_node, integer_type_node);
 
       gfor_fndecl_caf_deregister = gfc_build_library_function_decl_with_spec (
 	get_identifier (PREFIX("caf_deregister")), ".WWW", void_type_node, 4,
@@ -4961,7 +4961,7 @@ generate_coarray_sym_init (gfc_symbol *sym)
 {
   tree tmp, size, decl, token;
   bool is_lock_type, is_event_type;
-  int reg_type;
+  int reg_type, num_dyn_comps;
 
   if (sym->attr.dummy || sym->attr.allocatable || !sym->attr.codimension
       || sym->attr.use_assoc || !sym->attr.referenced
@@ -5012,11 +5012,17 @@ generate_coarray_sym_init (gfc_symbol *sym)
     reg_type = GFC_CAF_EVENT_STATIC;
   else
     reg_type = GFC_CAF_COARRAY_STATIC;
-  tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_register, 6, size,
+  if (sym->ts.type == BT_DERIVED)
+    /* Get the allocatable or pointer components of the derived type.  */
+    num_dyn_comps = gfc_get_num_alloc_ptr_comps (sym->ts.u.derived);
+  else
+    num_dyn_comps = 0;
+  tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_register, 7, size,
 			     build_int_cst (integer_type_node, reg_type),
 			     token, null_pointer_node, /* token, stat.  */
 			     null_pointer_node, /* errgmsg, errmsg_len.  */
-			     build_int_cst (integer_type_node, 0));
+			     build_int_cst (integer_type_node, 0),
+			     build_int_cst (integer_type_node, num_dyn_comps));
   gfc_add_modify (&caf_init_block, decl, fold_convert (TREE_TYPE (decl), tmp));
 
   /* Handle "static" initializer.  */
