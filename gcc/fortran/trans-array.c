@@ -5402,7 +5402,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   stmtblock_t elseblock;
   gfc_expr **lower;
   gfc_expr **upper;
-  gfc_ref *ref, *prev_ref = NULL;
+  gfc_ref *ref, *prev_ref = NULL, *coref;
   bool allocatable, coarray, dimension, alloc_w_e3_arr_spec = false;
 
   ref = expr->ref;
@@ -5416,15 +5416,24 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   if (!prev_ref)
     {
       allocatable = expr->symtree->n.sym->attr.allocatable;
-      coarray = expr->symtree->n.sym->attr.codimension;
       dimension = expr->symtree->n.sym->attr.dimension;
     }
   else
     {
       allocatable = prev_ref->u.c.component->attr.allocatable;
-      coarray = prev_ref->u.c.component->attr.codimension;
       dimension = prev_ref->u.c.component->attr.dimension;
     }
+
+  /* For allocatable/pointer arrays in derived types, one of the refs has to be
+     a coarray.  In this case it does not matter whether we are on this_image
+     or not.  */
+  coarray = false;
+  for (coref = expr->ref; coref; coref = coref->next)
+    if (coref->type == REF_ARRAY && coref->u.ar.codimen > 0)
+      {
+	coarray = true;
+	break;
+      }
 
   if (!dimension)
     gcc_assert (coarray);
@@ -5475,7 +5484,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   gfc_init_block (&set_descriptor_block);
   size = gfc_array_init_size (se->expr, alloc_w_e3_arr_spec ? expr->rank
 							   : ref->u.ar.as->rank,
-			      coarray ? ref->u.ar.as->corank : 0,
+			      coarray ? coref->u.ar.as->corank : 0,
 			      &offset, lower, upper,
 			      &se->pre, &set_descriptor_block, &overflow,
 			      expr3_elem_size, nelems, expr3, e3_arr_desc,
@@ -5494,6 +5503,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   			("Integer overflow when calculating the amount of "
   			 "memory to allocate"));
 	  error = build_call_expr_loc (input_location,
+
 				       gfor_fndecl_runtime_error, 1, msg);
 	}
       else
@@ -5518,13 +5528,26 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   STRIP_NOPS (pointer);
 
   if (coarray && flag_coarray == GFC_FCOARRAY_LIB)
-    token = gfc_build_addr_expr (NULL_TREE,
-				 gfc_conv_descriptor_token (se->expr));
+    {
+      if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (se->expr))
+	  && gfc_expr_attr (expr).codimension)
+	token = gfc_build_addr_expr (NULL_TREE,
+				     gfc_conv_descriptor_token (se->expr));
+      else
+	{
+	  tmp = gfc_get_tree_for_caf_expr (expr);
+	  gcc_assert (tmp != NULL);
+	  if (POINTER_TYPE_P (TREE_TYPE (tmp)))
+	    tmp = build_fold_indirect_ref_loc (input_location, tmp);
+	  token = TYPE_LANG_SPECIFIC (TREE_TYPE (tmp))->caf_token;
+	}
+    }
 
   /* The allocatable variant takes the old pointer as first argument.  */
   if (allocatable)
     gfc_allocate_allocatable (&elseblock, pointer, size, token,
-			      status, errmsg, errlen, label_finish, expr);
+			      status, errmsg, errlen, label_finish, expr,
+			      coref->u.ar.as->corank);
   else
     gfc_allocate_using_malloc (&elseblock, pointer, size, status);
 

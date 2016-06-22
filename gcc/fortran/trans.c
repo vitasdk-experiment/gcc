@@ -758,6 +758,53 @@ gfc_allocate_using_lib (stmtblock_t * block, tree pointer, tree size,
   gfc_add_expr_to_block (block, tmp);
 }
 
+static void
+gfc_caf_register_component (stmtblock_t * block, tree pointer, tree size,
+			tree token, tree status, tree errmsg, tree errlen,
+			tree alloc_comp_index, bool lock_var, bool event_var)
+{
+  tree tmp, pstat;
+
+  gcc_assert (token != NULL_TREE);
+
+  /* The allocation itself.  */
+  if (status == NULL_TREE)
+    pstat  = null_pointer_node;
+  else
+    pstat  = gfc_build_addr_expr (NULL_TREE, status);
+
+  if (errmsg == NULL_TREE)
+    {
+      gcc_assert(errlen == NULL_TREE);
+      errmsg = null_pointer_node;
+      errlen = build_int_cst (integer_type_node, 0);
+    }
+
+  size = fold_convert (size_type_node, size);
+  tmp = build_call_expr_loc (input_location,
+		gfor_fndecl_caf_register_component, 8,
+		token,
+		build_int_cst (integer_type_node,
+			       lock_var ? GFC_CAF_LOCK_ALLOC
+					: event_var ? GFC_CAF_EVENT_ALLOC
+						    : GFC_CAF_COARRAY_ALLOC),
+		fold_build2_loc (input_location,
+				 MAX_EXPR, size_type_node, size,
+				 build_int_cst (size_type_node, 1)),
+		alloc_comp_index, gfc_build_addr_expr (NULL_TREE, pointer),
+		pstat, errmsg, errlen);
+
+  gfc_add_expr_to_block (block, tmp);
+
+  /* It guarantees memory consistency within the same segment */
+  tmp = gfc_build_string_const (strlen ("memory")+1, "memory"),
+  tmp = build5_loc (input_location, ASM_EXPR, void_type_node,
+		    gfc_build_string_const (1, ""), NULL_TREE, NULL_TREE,
+		    tree_cons (NULL_TREE, tmp, NULL_TREE), NULL_TREE);
+  ASM_VOLATILE_P (tmp) = 1;
+  gfc_add_expr_to_block (block, tmp);
+}
+
 
 /* Generate code for an ALLOCATE statement when the argument is an
    allocatable variable.  If the variable is currently allocated, it is an
@@ -784,7 +831,7 @@ gfc_allocate_using_lib (stmtblock_t * block, tree pointer, tree size,
 void
 gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 			  tree status, tree errmsg, tree errlen, tree label_finish,
-			  gfc_expr* expr)
+			  gfc_expr* expr, int corank)
 {
   stmtblock_t alloc_block;
   tree tmp, null_mem, alloc, error;
@@ -801,9 +848,9 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
   gfc_start_block (&alloc_block);
 
   if (flag_coarray == GFC_FCOARRAY_LIB
-      && gfc_expr_attr (expr).codimension)
+      && (corank > 0 || gfc_expr_attr (expr).codimension))
     {
-      tree cond, num_alloc_comps;
+      tree cond;
       bool lock_var = expr->ts.type == BT_DERIVED
 		      && expr->ts.u.derived->from_intmod
 			 == INTMOD_ISO_FORTRAN_ENV
@@ -814,6 +861,8 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 			 == INTMOD_ISO_FORTRAN_ENV
 		       && expr->ts.u.derived->intmod_sym_id
 		         == ISOFORTRAN_EVENT_TYPE;
+      bool component_alloc = corank > 0 && ! gfc_expr_attr (expr).codimension;
+
       /* In the front end, we represent the lock variable as pointer. However,
 	 the FE only passes the pointer around and leaves the actual
 	 representation to the library. Hence, we have to convert back to the
@@ -822,15 +871,26 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 	size = fold_build2_loc (input_location, TRUNC_DIV_EXPR, size_type_node,
 				size, TYPE_SIZE_UNIT (ptr_type_node));
 
-      if (expr->ts.type == BT_DERIVED)
-	num_alloc_comps = build_int_cst (integer_type_node,
-			      gfc_get_num_alloc_ptr_comps (expr->ts.u.derived));
-      else
-	num_alloc_comps = integer_zero_node;
-      gfc_allocate_using_lib (&alloc_block, mem, size, token, status,
-			      errmsg, errlen, num_alloc_comps, lock_var,
-			      event_var);
+      if (component_alloc)
+	{
+	  tree alloc_comp_index = integer_zero_node; // TODO!
 
+	  gfc_caf_register_component (&alloc_block, mem, size, token, status,
+				      errmsg, errlen, alloc_comp_index,
+				      lock_var, event_var);
+	}
+      else
+	{
+	  tree num_alloc_comps;
+	  if (expr->ts.type == BT_DERIVED)
+	    num_alloc_comps = build_int_cst (integer_type_node,
+			      gfc_get_num_alloc_ptr_comps (expr->ts.u.derived));
+	  else
+	    num_alloc_comps = integer_zero_node;
+	  gfc_allocate_using_lib (&alloc_block, mem, size, token, status,
+				  errmsg, errlen, num_alloc_comps, lock_var,
+				  event_var);
+	}
       if (status != NULL_TREE)
 	{
 	  TREE_USED (label_finish) = 1;

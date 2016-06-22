@@ -661,7 +661,7 @@ tree gfc_build_memcpy_call (tree, tree, tree);
 
 /* Allocate memory for allocatable variables, with optional status variable.  */
 void gfc_allocate_allocatable (stmtblock_t*, tree, tree, tree, tree,
-			       tree, tree, tree, gfc_expr*);
+			       tree, tree, tree, gfc_expr*, int);
 
 /* Allocate memory, with optional status variable.  */
 void gfc_allocate_using_malloc (stmtblock_t *, tree, tree, tree);

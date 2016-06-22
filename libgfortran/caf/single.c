@@ -160,16 +160,21 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
   single_token->memptr = local;
   single_token->owning_memory = true;
   single_token->num_comps = num_alloc_comps;
-  single_token->components = (caf_single_token_t *) calloc (num_alloc_comps,
-						       sizeof (caf_single_token_t));
-  if (unlikely (single_token->components == NULL))
+  if (num_alloc_comps > 0)
     {
-      caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat, errmsg,
-			  errmsg_len);
-      free (local);
-      free (*token);
-      return NULL;
+      single_token->components = (caf_single_token_t *) calloc (num_alloc_comps,
+						   sizeof (caf_single_token_t));
+      if (unlikely (single_token->components == NULL))
+	{
+	  caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat,
+			      errmsg, errmsg_len);
+	  free (local);
+	  free (*token);
+	  return NULL;
+	}
     }
+  else
+    single_token->components = NULL;
 
   if (stat)
     *stat = 0;
@@ -234,6 +239,10 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
     }
 
   single_token->components[comp_num]->memptr = *component;
+
+  printf( "token: %p, dertype mem: %p, sub-token: %p, memory: %p, memdest: %p\n", single_token,
+	  single_token->memptr, single_token->components[comp_num],
+	  *component, component);
 
   if (stat)
     *stat = 0;
