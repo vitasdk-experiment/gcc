@@ -33,8 +33,19 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 /* Define GFC_CAF_CHECK to enable run-time checking.  */
 /* #define GFC_CAF_CHECK  1  */
 
-typedef void* single_token_t;
-#define TOKEN(X) ((single_token_t) (X))
+struct caf_single_token
+{
+  void *memptr;
+  int num_comps;
+  struct caf_single_token **components;
+  /* Set when the caf lib has allocated the memory in memptr and is responsible
+     for freeing it on deregister. */
+  bool owning_memory;
+};
+typedef struct caf_single_token *caf_single_token_t;
+
+#define TOKEN(X) ((caf_single_token_t) (X))
+#define MEMTOK(X) ((caf_single_token_t) (X))->memptr
 
 /* Single-image implementation of the CAF library.
    Note: For performance reasons -fcoarry=single should be used
@@ -58,6 +69,29 @@ caf_runtime_error (const char *message, ...)
   /* FIXME: Shutdown the Fortran RTL to flush the buffer.  PR 43849.  */
   exit (EXIT_FAILURE);
 }
+
+/* Error handling is similar everytime.  */
+static void
+caf_internal_error (const char *msg, size_t msg_len, int *stat, char *errmsg,
+		    int errmsg_len)
+{
+  if (stat)
+  {
+    *stat = 1;
+    if (errmsg_len > 0)
+    {
+      int len = ((int) msg_len > errmsg_len) ? errmsg_len
+						  : (int) msg_len;
+      memcpy (errmsg, msg, len);
+      if (errmsg_len > len)
+	memset (&errmsg[len], ' ', errmsg_len-len);
+    }
+    return;
+  }
+  else
+    caf_runtime_error (msg);
+}
+
 
 void
 _gfortran_caf_init (int *argc __attribute__ ((unused)),
@@ -94,12 +128,18 @@ _gfortran_caf_num_images (int distance __attribute__ ((unused)),
 }
 
 
+/* This error message is used by both caf_register and caf_register_component.
+ */
+const char alloc_fail_msg[] = "Failed to allocate coarray";
+
+
 void *
 _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 			int *stat, char *errmsg, int errmsg_len,
-			int num_alloc_comps __attribute__ ((unused)))
+			int num_alloc_comps)
 {
   void *local;
+  caf_single_token_t single_token;
 
   if (type == CAF_REGTYPE_LOCK_STATIC || type == CAF_REGTYPE_LOCK_ALLOC
       || type == CAF_REGTYPE_CRITICAL || type == CAF_REGTYPE_EVENT_STATIC
@@ -107,29 +147,29 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
     local = calloc (size, sizeof (bool));
   else
     local = malloc (size);
-  *token = malloc (sizeof (single_token_t));
+  *token = malloc (sizeof (struct caf_single_token));
 
-  if (unlikely (local == NULL || token == NULL))
+  if (unlikely (local == NULL || *token == NULL))
     {
-      const char msg[] = "Failed to allocate coarray";
-      if (stat)
-	{
-	  *stat = 1;
-	  if (errmsg_len > 0)
-	    {
-	      int len = ((int) sizeof (msg) > errmsg_len) ? errmsg_len
-							  : (int) sizeof (msg);
-	      memcpy (errmsg, msg, len);
-	      if (errmsg_len > len)
-		memset (&errmsg[len], ' ', errmsg_len-len);
-	    }
-	  return NULL;
-	}
-      else
-	  caf_runtime_error (msg);
+      caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat, errmsg,
+			  errmsg_len);
+      return NULL;
     }
 
-  *token = local;
+  single_token = TOKEN(*token);
+  single_token->memptr = local;
+  single_token->owning_memory = true;
+  single_token->num_comps = num_alloc_comps;
+  single_token->components = (caf_single_token_t *) calloc (num_alloc_comps,
+						       sizeof (caf_single_token_t));
+  if (unlikely (single_token->components == NULL))
+    {
+      caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat, errmsg,
+			  errmsg_len);
+      free (local);
+      free (*token);
+      return NULL;
+    }
 
   if (stat)
     *stat = 0;
@@ -147,45 +187,56 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 }
 
 
-void *
-_gfortran_caf_register_component (caf_token_t token __attribute__ ((unused)),
-				  caf_register_t type, size_t size,
-				  int comp_id __attribute__ ((unused)),
+void
+_gfortran_caf_register_component (caf_token_t token, caf_register_t type,
+				  size_t size, int comp_num, void **component,
 				  int *stat, char *errmsg, int errmsg_len)
 {
-  void *local;
+  caf_single_token_t single_token = TOKEN(token);
 
-  if (type == CAF_REGTYPE_LOCK_STATIC || type == CAF_REGTYPE_LOCK_ALLOC
-      || type == CAF_REGTYPE_CRITICAL || type == CAF_REGTYPE_EVENT_STATIC
-      || type == CAF_REGTYPE_EVENT_ALLOC)
-    local = calloc (size, sizeof (bool));
-  else
-    local = malloc (size);
-
-  if (unlikely (local == NULL))
+  if (unlikely (single_token->num_comps < comp_num))
     {
-      const char msg[] = "Failed to allocate component";
-      if (stat)
-	{
-	  *stat = 1;
-	  if (errmsg_len > 0)
-	    {
-	      int len = ((int) sizeof (msg) > errmsg_len) ? errmsg_len
-							  : (int) sizeof (msg);
-	      memcpy (errmsg, msg, len);
-	      if (errmsg_len > len)
-		memset (&errmsg[len], ' ', errmsg_len-len);
-	    }
-	  return NULL;
-	}
-      else
-	  caf_runtime_error (msg);
+      const char msg[] = "Failed to register component (component_id out of "
+			 "range)";
+      caf_internal_error (msg, sizeof (msg), stat, errmsg, errmsg_len);
+      return;
     }
+
+  single_token->components[comp_num] = (caf_single_token_t) calloc (1,
+					      sizeof (struct caf_single_token));
+  if (unlikely (single_token->components[comp_num] == NULL))
+    {
+      caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat, errmsg,
+			  errmsg_len);
+     return;
+    }
+
+  if (*component == NULL)
+    {
+      single_token->components[comp_num]->owning_memory = true;
+
+      if (type == CAF_REGTYPE_LOCK_STATIC || type == CAF_REGTYPE_LOCK_ALLOC
+	  || type == CAF_REGTYPE_CRITICAL || type == CAF_REGTYPE_EVENT_STATIC
+	  || type == CAF_REGTYPE_EVENT_ALLOC)
+	*component = calloc (size, sizeof (bool));
+      else
+	*component = malloc (size);
+
+      if (unlikely (*component == NULL))
+	{
+	  caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat,
+			      errmsg, errmsg_len);
+	  /* Roll back to prevent memory loss.  */
+	  free (single_token->components[comp_num]);
+	  single_token->components[comp_num] = NULL;
+	  return;
+	}
+    }
+
+  single_token->components[comp_num]->memptr = *component;
 
   if (stat)
     *stat = 0;
-
-  return local;
 }
 
 
@@ -194,7 +245,37 @@ _gfortran_caf_deregister (caf_token_t *token, int *stat,
 			  char *errmsg __attribute__ ((unused)),
 			  int errmsg_len __attribute__ ((unused)))
 {
+  /* TODO: Free components.  */
   free (TOKEN(*token));
+
+  if (stat)
+    *stat = 0;
+}
+
+
+void
+_gfortran_caf_deregister_component (caf_token_t token, int comp_num,
+				    void **component, int *stat,
+				    char *errmsg, int errmsg_len)
+{
+  caf_single_token_t single_token = TOKEN(token);
+  if (unlikely (single_token->num_comps < comp_num))
+    {
+      const char msg[] = "Failed to free component (component_id out of range)";
+      caf_internal_error (msg, sizeof (msg), stat, errmsg, errmsg_len);
+      return;
+    }
+
+  if (single_token->components[comp_num]->owning_memory)
+    {
+      /* Have to free the components memory, because we allocated it. */
+      free (single_token->components[comp_num]->memptr);
+      *component = NULL;
+    }
+
+  /* Now free our record-keeping structure. */
+  free (single_token->components[comp_num]);
+  single_token->components[comp_num] = NULL;
 
   if (stat)
     *stat = 0;
@@ -645,7 +726,7 @@ _gfortran_caf_get (caf_token_t token, size_t offset,
 
   if (rank == 0)
     {
-      void *sr = (void *) ((char *) TOKEN (token) + offset);
+      void *sr = (void *) ((char *) MEMTOK (token) + offset);
       if (GFC_DESCRIPTOR_TYPE (dest) == GFC_DESCRIPTOR_TYPE (src)
 	  && dst_kind == src_kind)
 	{
@@ -706,7 +787,7 @@ _gfortran_caf_get (caf_token_t token, size_t offset,
 	      stride = src->dim[j]._stride;
 	    }
 	  array_offset_sr += (i / extent) * src->dim[rank-1]._stride;
-	  void *sr = (void *)((char *) TOKEN (token) + offset
+	  void *sr = (void *)((char *) MEMTOK (token) + offset
 			  + array_offset_sr*GFC_DESCRIPTOR_SIZE (src));
           memcpy ((void *) ((char *) tmp + array_offset_dst), sr, src_size);
           array_offset_dst += src_size;
@@ -791,7 +872,7 @@ _gfortran_caf_get (caf_token_t token, size_t offset,
 	  stride = src->dim[j]._stride;
 	}
       array_offset_sr += (i / extent) * src->dim[rank-1]._stride;
-      void *sr = (void *)((char *) TOKEN (token) + offset
+      void *sr = (void *)((char *) MEMTOK (token) + offset
 			  + array_offset_sr*GFC_DESCRIPTOR_SIZE (src));
 
       if (GFC_DESCRIPTOR_TYPE (dest) == GFC_DESCRIPTOR_TYPE (src)
@@ -835,7 +916,7 @@ _gfortran_caf_send (caf_token_t token, size_t offset,
 
   if (rank == 0)
     {
-      void *dst = (void *) ((char *) TOKEN (token) + offset);
+      void *dst = (void *) ((char *) MEMTOK (token) + offset);
       if (GFC_DESCRIPTOR_TYPE (dest) == GFC_DESCRIPTOR_TYPE (src)
 	  && dst_kind == src_kind)
 	{
@@ -927,7 +1008,7 @@ _gfortran_caf_send (caf_token_t token, size_t offset,
           stride = dest->dim[j]._stride;
 	    }
 	  array_offset_dst += (i / extent) * dest->dim[rank-1]._stride;
-	  void *dst = (void *)((char *) TOKEN (token) + offset
+	  void *dst = (void *)((char *) MEMTOK (token) + offset
 		      + array_offset_dst*GFC_DESCRIPTOR_SIZE (dest));
           void *sr = tmp + array_offset_sr;
 	  if (GFC_DESCRIPTOR_TYPE (dest) == GFC_DESCRIPTOR_TYPE (src)
@@ -975,7 +1056,7 @@ _gfortran_caf_send (caf_token_t token, size_t offset,
           stride = dest->dim[j]._stride;
 	}
       array_offset_dst += (i / extent) * dest->dim[rank-1]._stride;
-      void *dst = (void *)((char *) TOKEN (token) + offset
+      void *dst = (void *)((char *) MEMTOK (token) + offset
 			   + array_offset_dst*GFC_DESCRIPTOR_SIZE (dest));
       void *sr;
       if (GFC_DESCRIPTOR_RANK (src) != 0)
@@ -1038,7 +1119,7 @@ _gfortran_caf_sendget (caf_token_t dst_token, size_t dst_offset,
   /* For a single image, src->base_addr should be the same as src_token + offset
      but to play save, we do it properly.  */
   void *src_base = GFC_DESCRIPTOR_DATA (src);
-  GFC_DESCRIPTOR_DATA (src) = (void *) ((char *) TOKEN (src_token) + src_offset);
+  GFC_DESCRIPTOR_DATA (src) = (void *) ((char *) MEMTOK (src_token) + src_offset);
   _gfortran_caf_send (dst_token, dst_offset, dst_image_index, dest, dst_vector,
 		      src, dst_kind, src_kind, may_require_tmp);
   GFC_DESCRIPTOR_DATA (src) = src_base;
@@ -1053,7 +1134,7 @@ _gfortran_caf_atomic_define (caf_token_t token, size_t offset,
 {
   assert(kind == 4);
 
-  uint32_t *atom = (uint32_t *) ((char *) TOKEN (token) + offset);
+  uint32_t *atom = (uint32_t *) ((char *) MEMTOK (token) + offset);
 
   __atomic_store (atom, (uint32_t *) value, __ATOMIC_RELAXED);
 
@@ -1069,7 +1150,7 @@ _gfortran_caf_atomic_ref (caf_token_t token, size_t offset,
 {
   assert(kind == 4);
 
-  uint32_t *atom = (uint32_t *) ((char *) TOKEN (token) + offset);
+  uint32_t *atom = (uint32_t *) ((char *) MEMTOK (token) + offset);
 
   __atomic_load (atom, (uint32_t *) value, __ATOMIC_RELAXED);
 
@@ -1086,7 +1167,7 @@ _gfortran_caf_atomic_cas (caf_token_t token, size_t offset,
 {
   assert(kind == 4);
 
-  uint32_t *atom = (uint32_t *) ((char *) TOKEN (token) + offset);
+  uint32_t *atom = (uint32_t *) ((char *) MEMTOK (token) + offset);
 
   *(uint32_t *) old = *(uint32_t *) compare;
   (void) __atomic_compare_exchange_n (atom, (uint32_t *) old,
@@ -1106,7 +1187,7 @@ _gfortran_caf_atomic_op (int op, caf_token_t token, size_t offset,
   assert(kind == 4);
 
   uint32_t res;
-  uint32_t *atom = (uint32_t *) ((char *) TOKEN (token) + offset);
+  uint32_t *atom = (uint32_t *) ((char *) MEMTOK (token) + offset);
 
   switch (op)
     {
@@ -1140,7 +1221,7 @@ _gfortran_caf_event_post (caf_token_t token, size_t index,
 			  int errmsg_len __attribute__ ((unused)))
 {
   uint32_t value = 1;
-  uint32_t *event = (uint32_t *) ((char *) TOKEN (token) + index*sizeof(uint32_t));
+  uint32_t *event = (uint32_t *) ((char *) MEMTOK (token) + index*sizeof(uint32_t));
   __atomic_fetch_add (event, (uint32_t) value, __ATOMIC_RELAXED);
   
   if(stat)
@@ -1153,7 +1234,7 @@ _gfortran_caf_event_wait (caf_token_t token, size_t index,
 			  char *errmsg __attribute__ ((unused)), 
 			  int errmsg_len __attribute__ ((unused)))
 {
-  uint32_t *event = (uint32_t *) ((char *) TOKEN (token) + index*sizeof(uint32_t));
+  uint32_t *event = (uint32_t *) ((char *) MEMTOK (token) + index*sizeof(uint32_t));
   uint32_t value = (uint32_t)-until_count;
    __atomic_fetch_add (event, (uint32_t) value, __ATOMIC_RELAXED);
   
@@ -1166,7 +1247,7 @@ _gfortran_caf_event_query (caf_token_t token, size_t index,
 			   int image_index __attribute__ ((unused)), 
 			   int *count, int *stat)
 {
-  uint32_t *event = (uint32_t *) ((char *) TOKEN (token) + index*sizeof(uint32_t));
+  uint32_t *event = (uint32_t *) ((char *) MEMTOK (token) + index*sizeof(uint32_t));
   __atomic_load (event, (uint32_t *) count, __ATOMIC_RELAXED);
   
   if(stat)
@@ -1179,7 +1260,7 @@ _gfortran_caf_lock (caf_token_t token, size_t index,
 		    int *aquired_lock, int *stat, char *errmsg, int errmsg_len)
 {
   const char *msg = "Already locked";
-  bool *lock = &((bool *) TOKEN (token))[index];
+  bool *lock = &((bool *) MEMTOK (token))[index];
 
   if (!*lock)
     {
@@ -1223,7 +1304,7 @@ _gfortran_caf_unlock (caf_token_t token, size_t index,
 		      int *stat, char *errmsg, int errmsg_len)
 {
   const char *msg = "Variable is not locked";
-  bool *lock = &((bool *) TOKEN (token))[index];
+  bool *lock = &((bool *) MEMTOK (token))[index];
 
   if (*lock)
     {

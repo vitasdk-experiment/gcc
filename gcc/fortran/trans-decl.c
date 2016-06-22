@@ -131,7 +131,9 @@ tree gfor_fndecl_caf_finalize;
 tree gfor_fndecl_caf_this_image;
 tree gfor_fndecl_caf_num_images;
 tree gfor_fndecl_caf_register;
+tree gfor_fndecl_caf_register_component;
 tree gfor_fndecl_caf_deregister;
+tree gfor_fndecl_caf_deregister_component;
 tree gfor_fndecl_caf_get;
 tree gfor_fndecl_caf_send;
 tree gfor_fndecl_caf_sendget;
@@ -3522,14 +3524,21 @@ gfc_build_builtin_function_decls (void)
 	pchar_type_node, integer_type_node, integer_type_node);
 
       gfor_fndecl_caf_register_component =
-	  gfc_build_library_function_decl_with_spec (
-	get_identifier (PREFIX("caf_register_component")), "....WWW",
-	pvoid_type_node, 7, pvoid_type_node, integer_type_node, size_type_node,
-	integer_type_node, pint_type, pchar_type_node, integer_type_node);
+	gfc_build_library_function_decl_with_spec (
+	  get_identifier (PREFIX("caf_register_component")), "....WWWW",
+	  void_type_node, 8, pvoid_type_node, integer_type_node, size_type_node,
+	  integer_type_node, ppvoid_type_node, pint_type, pchar_type_node,
+	  integer_type_node);
 
       gfor_fndecl_caf_deregister = gfc_build_library_function_decl_with_spec (
 	get_identifier (PREFIX("caf_deregister")), ".WWW", void_type_node, 4,
         ppvoid_type_node, pint_type, pchar_type_node, integer_type_node);
+
+      gfor_fndecl_caf_deregister_component =
+	gfc_build_library_function_decl_with_spec (
+	  get_identifier (PREFIX("caf_deregister_component")), "..WWWW",
+	  void_type_node, 6, pvoid_type_node, integer_type_node,
+	  ppvoid_type_node, pint_type, pchar_type_node, integer_type_node);
 
       gfor_fndecl_caf_get = gfc_build_library_function_decl_with_spec (
 	get_identifier (PREFIX("caf_get")), ".R.RRRW", void_type_node, 9,

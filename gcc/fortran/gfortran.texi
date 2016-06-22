@@ -3553,7 +3553,11 @@ caf_register_t;
 * _gfortran_caf_this_image:: Querying the image number
 * _gfortran_caf_num_images:: Querying the maximal number of images
 * _gfortran_caf_register:: Registering coarrays
+* _gfortran_caf_register_component:: Registering an allocatable/pointer
+component of a coarray of derived type
 * _gfortran_caf_deregister:: Deregistering coarrays
+* _gfortran_caf_deregister_component:: Deregistering an allocatable/pointer
+component of a coarray of derived type
 * _gfortran_caf_send:: Sending data from a local image to a remote image
 * _gfortran_caf_get:: Getting data from a remote image
 * _gfortran_caf_sendget:: Sending data between remote images
@@ -3688,7 +3692,7 @@ the the compiler passes @code{distance=0} and @code{failed=-1} to the function.
 
 @node _gfortran_caf_register
 @subsection @code{_gfortran_caf_register} --- Registering coarrays
-@cindex Coarray, _gfortran_caf_deregister
+@cindex Coarray, _gfortran_caf_register
 
 @table @asis
 @item @emph{Description}:
@@ -3752,6 +3756,70 @@ be no event, e.g. zero.
 @end table
 
 
+@node _gfortran_caf_register_component
+@subsection @code{_gfortran_caf_register_component} --- Registering an allocatable/pointer component of a coarray of derived type
+@cindex Coarray, _gfortran_caf_register_component
+
+@table @asis
+@item @emph{Description}:
+Allocates and/or registers a component of a coarray of derived type.  If an
+error occurs and @var{STAT} is a @code{NULL} pointer, the function shall abort
+with printing an error message and starting the error termination.  If no error
+occurs and @var{STAT} is present, it shall be set to zero.
+Otherwise, it shall be set to a positive value and, if not-@code{NULL},
+@var{ERRMSG} shall be set to a string describing the failure.
+The parameter @var{COMP_NUM} gives the number of the allocatable or
+pointer component to register.  The parameter @var{COMPONENT} is a pointer to the
+address of the component's memory.  Only when the address of the component's
+memory is @code{NULL} then memory of size @var{SIZE} is allocated, registered
+for coarray access and the address of that memory is stored where
+@var{COMPONENT} points to.  When @var{COMPONENT} already points to a
+non-@code{NULL} address, then the memory at that address is registered for
+coarray access and the memory pointed to @var{COMPONENT} is unchanged.
+
+For @code{CAF_REGTYPE_COARRAY_STATIC} and @code{CAF_REGTYPE_COARRAY_ALLOC},
+the passed size is the byte size requested.  For @code{CAF_REGTYPE_LOCK_STATIC},
+@code{CAF_REGTYPE_LOCK_ALLOC} and @code{CAF_REGTYPE_CRITICAL} it is the array
+size or one for a scalar.
+
+
+@item @emph{Syntax}:
+@code{void *caf_register_component (caf_token_t token, caf_register_t type,
+size_t size, int comp_num, void **component, int *stat, char *errmsg,
+int errmsg_len)}
+
+@item @emph{Arguments}:
+@multitable @columnfractions .15 .70
+@item @var{token} @tab intent(inout) An opaque type identifying the coarray.
+@item @var{type} @tab one of the caf_register_t types.
+@item @var{size} @tab For normal coarrays, the byte size of the coarray to be
+allocated; for lock types and event types, the number of elements.
+@item @var{comp_num} @tab the number of the component in the derived type to
+register. The count starts at zero.
+@item @var{component} @tab intent(inout) the address of the components memory.
+When @code{NULL} the component will be allocated according to the @var{type}
+setting and the address of the memory returned here.  In both cases the memory
+will be registered for coarray access.
+@item @var{stat} @tab intent(out) For allocatable coarrays, stores the STAT=;
+may be NULL
+@item @var{errmsg} @tab intent(out) When an error occurs, this will be set to
+an error message; may be NULL
+@item @var{errmsg_len} @tab the buffer size of errmsg.
+@end multitable
+
+@item @emph{NOTES}
+For normal coarrays, the returned pointer in @var{COMPONENT} is used for
+accesses on the local image.  For lock types, the value shall only used for
+checking the allocation status.  Note that for critical blocks, the locking is
+only required on one image; in the locking statement, the processor shall always
+pass always an image index of one for critical-block lock variables
+(@code{CAF_REGTYPE_CRITICAL}). For lock types and critical-block variables,
+the initial value shall be unlocked (or, respecitively, not in critical
+section) such as the value false; for event types, the initial state should
+be no event, e.g. zero.
+@end table
+
+
 @node _gfortran_caf_deregister
 @subsection @code{_gfortran_caf_deregister} --- Deregistering coarrays
 @cindex Coarray, _gfortran_caf_deregister
@@ -3760,14 +3828,17 @@ be no event, e.g. zero.
 @item @emph{Description}:
 Called to free the memory of a coarray; the processor calls this function for
 automatic and explicit deallocation.  In case of an error, this function shall
-fail with an error message, unless the @var{STAT} variable is not null.
+fail with an error message, unless the @var{STAT} variable is not null.  For
+coarrays of derived type with allocatable/pointer components, the function shall
+also deregister all its allocatable/pointer components.
 
 @item @emph{Syntax}:
-@code{void caf_deregister (const caf_token_t *token, int *stat, char *errmsg,
+@code{void caf_deregister (caf_token_t *token, int *stat, char *errmsg,
 int errmsg_len)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
+@item @var{token} @tab the token to free.
 @item @var{stat} @tab intent(out) Stores the STAT=; may be NULL
 @item @var{errmsg} @tab intent(out) When an error occurs, this will be set
 to an error message; may be NULL
@@ -3778,6 +3849,41 @@ to an error message; may be NULL
 For nonalloatable coarrays this function is never called.  If a cleanup is
 required, it has to be handled via the finish, stop and error stop functions,
 and via destructors.
+@end table
+
+
+@node _gfortran_caf_deregister_component
+@subsection @code{_gfortran_caf_deregister_component} --- Deregistering an allocatable/pointer component of a coarray of derived type
+@cindex Coarray, _gfortran_caf_deregister_component
+
+@table @asis
+@item @emph{Description}:
+Called to free the memory of a a component of coarray of derived type; the
+processor calls this function for automatic and explicit deallocation.  In case
+of an error, this function shall fail with an error message, unless the
+@var{STAT} variable is not null.
+
+@item @emph{Syntax}:
+@code{void caf_deregister_component (caf_token_t token, int comp_num,
+void **component, int *stat, char *errmsg, int errmsg_len)}
+
+@item @emph{Arguments}:
+@multitable @columnfractions .15 .70
+@item @var{token} @tab the token associated with the derived type in which the
+allocatable/pointer component is to be freed.
+@item @var{comp_num} @tab the zero-based index of the component to free.
+@item @var{component} @tab the address of the component to free.  When the
+memory allocated for component was allocated by the caf-library, then access
+after calling @code{caf_deregister_component ()} is illegal.
+@item @var{stat} @tab intent(out) Stores the STAT=; may be NULL
+@item @var{errmsg} @tab intent(out) When an error occurs, this will be set
+to an error message; may be NULL
+@item @var{errmsg_len} @tab the buffer size of errmsg.
+@end multitable
+
+@item @emph{NOTES}
+If a cleanup is required, it has to be handled via the finish, stop and error
+stop functions, and via destructors.
 @end table
 
 
