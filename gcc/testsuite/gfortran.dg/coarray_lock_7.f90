@@ -27,10 +27,10 @@ lock(four(1)[6], acquired_lock=ll, stat=ii)
 unlock(four(2)[7])
 end
 
-! { dg-final { scan-tree-dump-times "one = \\(void \\* \\* restrict\\) _gfortran_caf_register \\(1, 2, \\(void \\* \\*\\) &caf_token.., 0B, 0B, 0\\);" 1 "original" } }
-! { dg-final { scan-tree-dump-times "two = \\(void \\*\\\[25\\\] \\* restrict\\) _gfortran_caf_register \\(25, 2, \\(void \\* \\*\\) &caf_token.., 0B, 0B, 0\\);" 1 "original" } }
-! { dg-final { scan-tree-dump-times "three.data = \\(void \\* restrict\\) _gfortran_caf_register \\(1, 3, &three.token, &stat.., 0B, 0\\);" 1 "original" } }
-! { dg-final { scan-tree-dump-times "four.data = \\(void \\* restrict\\) _gfortran_caf_register \\(7, 3, &four.token, &stat.., 0B, 0\\);" 1 "original" } }
+! { dg-final { scan-tree-dump-times "one = \\(void \\* \\* restrict\\) _gfortran_caf_register \\(1, 2, \\(void \\* \\*\\) &caf_token.., 0B, 0B, 0, 0\\);" 1 "original" } }
+! { dg-final { scan-tree-dump-times "two = \\(void \\*\\\[25\\\] \\* restrict\\) _gfortran_caf_register \\(25, 2, \\(void \\* \\*\\) &caf_token.., 0B, 0B, 0, 0\\);" 1 "original" } }
+! { dg-final { scan-tree-dump-times "three.data = \\(void \\* restrict\\) _gfortran_caf_register \\(1, 3, &three.token, &stat.., 0B, 0, 0\\);" 1 "original" } }
+! { dg-final { scan-tree-dump-times "four.data = \\(void \\* restrict\\) _gfortran_caf_register \\(7, 3, &four.token, &stat.., 0B, 0, 0\\);" 1 "original" } }
 
 ! { dg-final { scan-tree-dump-times "_gfortran_caf_lock \\(caf_token.., 0, 0, 0B, 0B, 0B, 0\\);" 1 "original" } }
 ! { dg-final { scan-tree-dump-times "_gfortran_caf_unlock \\(caf_token.., 0, 0, 0B, 0B, 0\\);" 1 "original" } }
