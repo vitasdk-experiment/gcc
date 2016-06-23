@@ -5482,9 +5482,12 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   overflow = integer_zero_node;
 
   gfc_init_block (&set_descriptor_block);
+  /* Take the corank only from the actual ref and not from the coref.  The
+     later will mislead the generation of the array dimensions for allocatable/
+     pointer components in derived types.  */
   size = gfc_array_init_size (se->expr, alloc_w_e3_arr_spec ? expr->rank
 							   : ref->u.ar.as->rank,
-			      coarray ? coref->u.ar.as->corank : 0,
+			      coarray ? ref->u.ar.as->corank : 0,
 			      &offset, lower, upper,
 			      &se->pre, &set_descriptor_block, &overflow,
 			      expr3_elem_size, nelems, expr3, e3_arr_desc,
@@ -5547,7 +5550,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   if (allocatable)
     gfc_allocate_allocatable (&elseblock, pointer, size, token,
 			      status, errmsg, errlen, label_finish, expr,
-			      coref->u.ar.as->corank);
+			      coref != NULL ? coref->u.ar.as->corank : 0);
   else
     gfc_allocate_using_malloc (&elseblock, pointer, size, status);
 

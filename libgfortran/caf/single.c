@@ -194,12 +194,12 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 
 void
 _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
-				  size_t size, int comp_num, void **component,
+				  size_t size, int comp_idx, void **component,
 				  int *stat, char *errmsg, int errmsg_len)
 {
   caf_single_token_t single_token = TOKEN(token);
 
-  if (unlikely (single_token->num_comps < comp_num))
+  if (unlikely (single_token->num_comps < comp_idx))
     {
       const char msg[] = "Failed to register component (component_id out of "
 			 "range)";
@@ -207,9 +207,9 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
       return;
     }
 
-  single_token->components[comp_num] = (caf_single_token_t) calloc (1,
+  single_token->components[comp_idx] = (caf_single_token_t) calloc (1,
 					      sizeof (struct caf_single_token));
-  if (unlikely (single_token->components[comp_num] == NULL))
+  if (unlikely (single_token->components[comp_idx] == NULL))
     {
       caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat, errmsg,
 			  errmsg_len);
@@ -218,7 +218,7 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 
   if (*component == NULL)
     {
-      single_token->components[comp_num]->owning_memory = true;
+      single_token->components[comp_idx]->owning_memory = true;
 
       if (type == CAF_REGTYPE_LOCK_STATIC || type == CAF_REGTYPE_LOCK_ALLOC
 	  || type == CAF_REGTYPE_CRITICAL || type == CAF_REGTYPE_EVENT_STATIC
@@ -232,16 +232,16 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 	  caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat,
 			      errmsg, errmsg_len);
 	  /* Roll back to prevent memory loss.  */
-	  free (single_token->components[comp_num]);
-	  single_token->components[comp_num] = NULL;
+	  free (single_token->components[comp_idx]);
+	  single_token->components[comp_idx] = NULL;
 	  return;
 	}
     }
 
-  single_token->components[comp_num]->memptr = *component;
+  single_token->components[comp_idx]->memptr = *component;
 
   printf( "token: %p, dertype mem: %p, sub-token: %p, memory: %p, memdest: %p\n", single_token,
-	  single_token->memptr, single_token->components[comp_num],
+	  single_token->memptr, single_token->components[comp_idx],
 	  *component, component);
 
   if (stat)
