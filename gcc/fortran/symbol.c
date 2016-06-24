@@ -4980,3 +4980,45 @@ gfc_get_num_alloc_ptr_comps (gfc_symbol *derived)
 
   return num;
 }
+
+
+/* Get the index of the first referenced allocatable or pointer component with
+   respect to expression's type. */
+
+int
+gfc_get_alloc_ptr_comps_idx (gfc_expr *expr)
+{
+  symbol_attribute attr = gfc_expr_attr (expr, true);
+  if (!(attr.allocatable || attr.pointer)
+	|| expr->symtree->n.sym->ts.type != BT_DERIVED)
+    return -1;
+
+  int idx = 0;
+  gfc_ref *ref = expr->ref;
+
+  while (ref && ref->type != REF_COMPONENT)
+    ref = ref->next;
+
+  if (ref == NULL)
+    return -1;
+
+  gfc_symbol *derived = expr->symtree->n.sym->ts.u.derived;
+  do
+    {
+      gfc_component *comp = derived->components;
+
+      while (comp != ref->u.c.component)
+	{
+	  ++idx;
+	  comp = comp->next;
+	}
+      if (comp != NULL)
+	return idx;
+      /* Also catch the components of the super type.  */
+      derived = gfc_get_derived_super_type (derived);
+    }
+  while (derived);
+
+  gcc_unreachable ();
+  //return idx;
+}

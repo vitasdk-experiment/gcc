@@ -125,12 +125,15 @@ void _gfortran_caf_co_reduce (gfc_descriptor_t *, void* (*) (void *, void*),
 			      int, int, int *, char *, int, int);
 
 void _gfortran_caf_get (caf_token_t, size_t, int, gfc_descriptor_t *,
-                        caf_vector_t *, gfc_descriptor_t *, int, int, bool);
+                        caf_vector_t *, gfc_descriptor_t *, int, int, bool,
+			int);
 void _gfortran_caf_send (caf_token_t, size_t, int, gfc_descriptor_t *,
-			 caf_vector_t *, gfc_descriptor_t *, int, int, bool);
+			 caf_vector_t *, gfc_descriptor_t *, int, int, bool,
+			 int);
 void _gfortran_caf_sendget (caf_token_t, size_t, int, gfc_descriptor_t *,
 			    caf_vector_t *, caf_token_t, size_t, int,
-			    gfc_descriptor_t *, caf_vector_t *, int, int, bool);
+			    gfc_descriptor_t *, caf_vector_t *, int, int, bool,
+			    int);
 
 void _gfortran_caf_atomic_define (caf_token_t, size_t, int, void *, int *,
 				  int, int);

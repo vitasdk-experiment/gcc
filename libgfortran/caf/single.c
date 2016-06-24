@@ -240,21 +240,25 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 
   single_token->components[comp_idx]->memptr = *component;
 
-  printf( "token: %p, dertype mem: %p, sub-token: %p, memory: %p, memdest: %p\n", single_token,
-	  single_token->memptr, single_token->components[comp_idx],
-	  *component, component);
-
   if (stat)
     *stat = 0;
 }
 
 
 void
-_gfortran_caf_deregister (caf_token_t *token, int *stat,
-			  char *errmsg __attribute__ ((unused)),
-			  int errmsg_len __attribute__ ((unused)))
+_gfortran_caf_deregister (caf_token_t *token, int *stat, char *errmsg,
+			  int errmsg_len)
 {
-  /* TODO: Free components.  */
+  caf_single_token_t single_token = TOKEN(*token);
+  /* Free components.  */
+  for (int i= 0; i< single_token->num_comps; ++i)
+    if (single_token->components[i] != NULL)
+      {
+	_gfortran_caf_deregister_component (single_token, i,
+					   &single_token->components[i]->memptr,
+					    NULL, errmsg, errmsg_len);
+      }
+
   free (TOKEN(*token));
 
   if (stat)
@@ -275,15 +279,18 @@ _gfortran_caf_deregister_component (caf_token_t token, int comp_num,
       return;
     }
 
-  if (single_token->components[comp_num]->owning_memory)
+  if (single_token->components[comp_num])
     {
-      /* Have to free the components memory, because we allocated it. */
-      free (single_token->components[comp_num]->memptr);
-      *component = NULL;
-    }
+      if (single_token->components[comp_num]->owning_memory)
+	{
+	  /* Have to free the components memory, because we allocated it. */
+	  free (single_token->components[comp_num]->memptr);
+	  *component = NULL;
+	}
 
-  /* Now free our record-keeping structure. */
-  free (single_token->components[comp_num]);
+      /* Now free our record-keeping structure. */
+      free (single_token->components[comp_num]);
+    }
   single_token->components[comp_num] = NULL;
 
   if (stat)
@@ -724,7 +731,7 @@ _gfortran_caf_get (caf_token_t token, size_t offset,
 		   gfc_descriptor_t *src,
 		   caf_vector_t *src_vector __attribute__ ((unused)),
 		   gfc_descriptor_t *dest, int src_kind, int dst_kind,
-		   bool may_require_tmp)
+		   bool may_require_tmp, int comp_idx)
 {
   /* FIXME: Handle vector subscripts.  */
   size_t i, k, size;
@@ -733,6 +740,17 @@ _gfortran_caf_get (caf_token_t token, size_t offset,
   size_t src_size = GFC_DESCRIPTOR_SIZE (src);
   size_t dst_size = GFC_DESCRIPTOR_SIZE (dest);
 
+  if (comp_idx != -1)
+    {
+      caf_single_token_t single_token = TOKEN (token);
+      if (unlikely (single_token->num_comps < comp_idx))
+	{
+	  fprintf (stderr, "libcaf_single RUNTIME ERROR: Component index %d "
+		   "out of range 0..%d\n", comp_idx, single_token->num_comps);
+	  abort();
+	}
+      token = single_token->components[comp_idx];
+    }
   if (rank == 0)
     {
       void *sr = (void *) ((char *) MEMTOK (token) + offset);
@@ -914,7 +932,7 @@ _gfortran_caf_send (caf_token_t token, size_t offset,
 		    gfc_descriptor_t *dest,
 		    caf_vector_t *dst_vector __attribute__ ((unused)),
 		    gfc_descriptor_t *src, int dst_kind, int src_kind,
-		    bool may_require_tmp)
+		    bool may_require_tmp, int comp_idx)
 {
   /* FIXME: Handle vector subscripts.  */
   size_t i, k, size;
@@ -923,6 +941,17 @@ _gfortran_caf_send (caf_token_t token, size_t offset,
   size_t src_size = GFC_DESCRIPTOR_SIZE (src);
   size_t dst_size = GFC_DESCRIPTOR_SIZE (dest);
 
+  if (comp_idx != -1)
+    {
+      caf_single_token_t single_token = TOKEN (token);
+      if (unlikely (single_token->num_comps < comp_idx))
+	{
+	  fprintf (stderr, "libcaf_single RUNTIME ERROR: Component index %d "
+		   "out of range 0..%d\n", comp_idx, single_token->num_comps);
+	  abort();
+	}
+      token = single_token->components[comp_idx];
+    }
   if (rank == 0)
     {
       void *dst = (void *) ((char *) MEMTOK (token) + offset);
@@ -1122,7 +1151,8 @@ _gfortran_caf_sendget (caf_token_t dst_token, size_t dst_offset,
 		       int src_image_index __attribute__ ((unused)),
 		       gfc_descriptor_t *src,
 		       caf_vector_t *src_vector __attribute__ ((unused)),
-		       int dst_kind, int src_kind, bool may_require_tmp)
+		       int dst_kind, int src_kind, bool may_require_tmp,
+		       int comp_idx)
 {
   /* FIXME: Handle vector subscript of 'src_vector'.  */
   /* For a single image, src->base_addr should be the same as src_token + offset
@@ -1130,7 +1160,7 @@ _gfortran_caf_sendget (caf_token_t dst_token, size_t dst_offset,
   void *src_base = GFC_DESCRIPTOR_DATA (src);
   GFC_DESCRIPTOR_DATA (src) = (void *) ((char *) MEMTOK (src_token) + src_offset);
   _gfortran_caf_send (dst_token, dst_offset, dst_image_index, dest, dst_vector,
-		      src, dst_kind, src_kind, may_require_tmp);
+		      src, dst_kind, src_kind, may_require_tmp, comp_idx);
   GFC_DESCRIPTOR_DATA (src) = src_base;
 }
 

@@ -5532,18 +5532,9 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
 
   if (coarray && flag_coarray == GFC_FCOARRAY_LIB)
     {
-      if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (se->expr))
-	  && gfc_expr_attr (expr).codimension)
-	token = gfc_build_addr_expr (NULL_TREE,
-				     gfc_conv_descriptor_token (se->expr));
-      else
-	{
-	  tmp = gfc_get_tree_for_caf_expr (expr);
-	  gcc_assert (tmp != NULL);
-	  if (POINTER_TYPE_P (TREE_TYPE (tmp)))
-	    tmp = build_fold_indirect_ref_loc (input_location, tmp);
-	  token = TYPE_LANG_SPECIFIC (TREE_TYPE (tmp))->caf_token;
-	}
+      tmp = gfc_get_tree_for_caf_expr (expr);
+      gfc_get_caf_token_offset (&token, NULL, tmp, NULL_TREE, expr);
+      token = gfc_build_addr_expr (NULL_TREE, token);
     }
 
   /* The allocatable variant takes the old pointer as first argument.  */

@@ -1874,7 +1874,8 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 
   caf_decl = expr->symtree->n.sym->backend_decl;
   gcc_assert (caf_decl);
-  if (expr->symtree->n.sym->ts.type == BT_CLASS)
+  if (expr->symtree->n.sym->ts.type == BT_CLASS
+      && expr->symtree->n.sym->attr.codimension)
     caf_decl = gfc_class_data_get (caf_decl);
   if (expr->symtree->n.sym->attr.codimension)
     return caf_decl;

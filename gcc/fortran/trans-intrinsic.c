@@ -1104,6 +1104,8 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   gfc_se argse;
   tree caf_decl, token, offset, image_index, tmp;
   tree res_var, dst_var, type, kind, vec;
+  tree component_idx;
+  int comp_idx;
 
   gcc_assert (flag_coarray == GFC_FCOARRAY_LIB);
 
@@ -1219,9 +1221,18 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   ASM_VOLATILE_P (tmp) = 1;
   gfc_add_expr_to_block (&se->pre, tmp);
 
-  tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get, 9,
+  comp_idx = gfc_get_alloc_ptr_comps_idx (expr);
+  if (comp_idx != -1)
+    {
+      component_idx = build_int_cst (integer_type_node, comp_idx);
+      offset = integer_zero_node;
+    }
+  else
+    component_idx = integer_minus_one_node;
+  tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get, 10,
 			     token, offset, image_index, argse.expr, vec,
-			     dst_var, kind, lhs_kind, may_require_tmp);
+			     dst_var, kind, lhs_kind, may_require_tmp,
+			     component_idx);
   gfc_add_expr_to_block (&se->pre, tmp);
 
   if (se->ss)
@@ -1233,7 +1244,7 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 }
 
 
-/* Send data to a remove coarray.  */
+/* Send data to a remote coarray.  */
 
 static tree
 conv_caf_send (gfc_code *code) {
@@ -1244,6 +1255,8 @@ conv_caf_send (gfc_code *code) {
   tree may_require_tmp;
   tree lhs_type = NULL_TREE;
   tree vec = null_pointer_node, rhs_vec = null_pointer_node;
+  tree component_idx = integer_minus_one_node;
+  int comp_idx;
 
   gcc_assert (flag_coarray == GFC_FCOARRAY_LIB);
 
@@ -1375,10 +1388,18 @@ conv_caf_send (gfc_code *code) {
 
   rhs_kind = build_int_cst (integer_type_node, rhs_expr->ts.kind);
 
+  comp_idx = gfc_get_alloc_ptr_comps_idx (lhs_expr);
+  if (comp_idx != -1)
+    {
+      component_idx = build_int_cst (integer_type_node, comp_idx);
+      offset = integer_zero_node;
+    }
+
   if (!gfc_is_coindexed (rhs_expr))
-    tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_send, 9, token,
+    tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_send, 10, token,
 			     offset, image_index, lhs_se.expr, vec,
-			     rhs_se.expr, lhs_kind, rhs_kind, may_require_tmp);
+			     rhs_se.expr, lhs_kind, rhs_kind, may_require_tmp,
+			     component_idx);
   else
     {
       tree rhs_token, rhs_offset, rhs_image_index;
@@ -1397,11 +1418,11 @@ conv_caf_send (gfc_code *code) {
       rhs_image_index = gfc_caf_get_image_index (&block, rhs_expr, caf_decl);
       gfc_get_caf_token_offset (&rhs_token, &rhs_offset, caf_decl, rhs_se.expr,
 				rhs_expr);
-      tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_sendget, 13,
+      tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_sendget, 14,
 				 token, offset, image_index, lhs_se.expr, vec,
 				 rhs_token, rhs_offset, rhs_image_index,
 				 rhs_se.expr, rhs_vec, lhs_kind, rhs_kind,
-				 may_require_tmp);
+				 may_require_tmp, component_idx);
     }
   gfc_add_expr_to_block (&block, tmp);
   gfc_add_block_to_block (&block, &lhs_se.post);

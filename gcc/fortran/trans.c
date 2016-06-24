@@ -783,7 +783,7 @@ gfc_caf_register_component (stmtblock_t * block, tree pointer, tree size,
   size = fold_convert (size_type_node, size);
   tmp = build_call_expr_loc (input_location,
 		gfor_fndecl_caf_register_component, 8,
-		token,
+		build_fold_indirect_ref (token),
 		build_int_cst (integer_type_node,
 			       lock_var ? GFC_CAF_LOCK_ALLOC
 					: event_var ? GFC_CAF_EVENT_ALLOC
@@ -861,7 +861,7 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 			 == INTMOD_ISO_FORTRAN_ENV
 		       && expr->ts.u.derived->intmod_sym_id
 		         == ISOFORTRAN_EVENT_TYPE;
-      bool component_alloc = corank > 0 && ! gfc_expr_attr (expr).codimension;
+      int comp_idx = gfc_get_alloc_ptr_comps_idx(expr);
 
       /* In the front end, we represent the lock variable as pointer. However,
 	 the FE only passes the pointer around and leaves the actual
@@ -871,9 +871,9 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 	size = fold_build2_loc (input_location, TRUNC_DIV_EXPR, size_type_node,
 				size, TYPE_SIZE_UNIT (ptr_type_node));
 
-      if (component_alloc)
+      if (comp_idx != -1)
 	{
-	  tree alloc_comp_index = integer_zero_node; // TODO!
+	  tree alloc_comp_index = build_int_cst (integer_type_node, comp_idx);
 
 	  gfc_caf_register_component (&alloc_block, mem, size, token, status,
 				      errmsg, errlen, alloc_comp_index,

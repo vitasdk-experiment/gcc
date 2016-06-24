@@ -3899,7 +3899,8 @@ to a remote image identified by the image_index.
 @item @emph{Syntax}:
 @code{void _gfortran_caf_send (caf_token_t token, size_t offset,
 int image_index, gfc_descriptor_t *dest, caf_vector_t *dst_vector,
-gfc_descriptor_t *src, int dst_kind, int src_kind, bool may_require_tmp)}
+gfc_descriptor_t *src, int dst_kind, int src_kind, bool may_require_tmp,
+int component_idx)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
@@ -3922,6 +3923,12 @@ time that the @var{dest} and @var{src} either cannot overlap or overlap (fully
 or partially) such that walking @var{src} and @var{dest} in element wise
 element order (honoring the stride value) will not lead to wrong results.
 Otherwise, the value is true.
+@item @var{component_idx} @tab the index of the allocatable/pointer component
+when in a derived type (zero based). When not in a derived type or a
+non-allocatable/non-pointer component is referenced, then -1. When an
+allocatable/pointer component is referenced, then @var{OFFSET} is set to zero
+and the @var{src} and @var{dest} descriptors give the referenced component,
+while the token is the token of the derived type.
 @end multitable
 
 @item @emph{NOTES}
@@ -3952,7 +3959,8 @@ image identified by the image_index.
 @item @emph{Syntax}:
 @code{void _gfortran_caf_get_desc (caf_token_t token, size_t offset,
 int image_index, gfc_descriptor_t *src, caf_vector_t *src_vector,
-gfc_descriptor_t *dest, int src_kind, int dst_kind, bool may_require_tmp)}
+gfc_descriptor_t *dest, int src_kind, int dst_kind, bool may_require_tmp,
+int component_idx)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
@@ -3975,7 +3983,12 @@ time that the @var{dest} and @var{src} either cannot overlap or overlap (fully
 or partially) such that walking @var{src} and @var{dest} in element wise
 element order (honoring the stride value) will not lead to wrong results.
 Otherwise, the value is true.
-@end multitable
+@item @var{component_idx} @tab the index of the allocatable/pointer component
+when in a derived type (zero based). When not in a derived type or a
+non-allocatable/non-pointer component is referenced, then -1. When an
+allocatable/pointer component is referenced, then @var{OFFSET} is set to zero
+and the @var{src} and @var{dest} descriptors give the referenced component,
+while the token is the token of the derived type.@end multitable
 
 @item @emph{NOTES}
 It is permitted to have image_id equal the current image; the memory of the
@@ -4007,7 +4020,7 @@ dst_image_index.
 int dst_image_index, gfc_descriptor_t *dest, caf_vector_t *dst_vector,
 caf_token_t src_token, size_t src_offset, int src_image_index,
 gfc_descriptor_t *src, caf_vector_t *src_vector, int dst_kind, int src_kind,
-bool may_require_tmp)}
+bool may_require_tmp, int component_idx)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
@@ -4038,6 +4051,12 @@ time that the @var{dest} and @var{src} either cannot overlap or overlap (fully
 or partially) such that walking @var{src} and @var{dest} in element wise
 element order (honoring the stride value) will not lead to wrong results.
 Otherwise, the value is true.
+@item @var{component_idx} @tab the index of the allocatable/pointer component
+when in a derived type (zero based). When not in a derived type or a
+non-allocatable/non-pointer component is referenced, then -1. When an
+allocatable/pointer component is referenced, then @var{OFFSET} is set to zero
+and the @var{src} and @var{dest} descriptors give the referenced component,
+while the token is the token of the derived type.
 @end multitable
 
 @item @emph{NOTES}

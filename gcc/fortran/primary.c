@@ -2214,7 +2214,7 @@ check_substring:
    We can have at most one full array reference.  */
 
 symbol_attribute
-gfc_variable_attr (gfc_expr *expr, gfc_typespec *ts)
+gfc_variable_attr (gfc_expr *expr, gfc_typespec *ts, bool in_allocate)
 {
   int dimension, codimension, pointer, allocatable, target;
   symbol_attribute attr;
@@ -2268,7 +2268,7 @@ gfc_variable_attr (gfc_expr *expr, gfc_typespec *ts)
 
 	  case AR_ELEMENT:
 	    /* Handle coarrays.  */
-	    if (ref->u.ar.dimen > 0)
+	    if (ref->u.ar.dimen > 0 && !in_allocate)
 	      allocatable = pointer = 0;
 	    break;
 
@@ -2298,13 +2298,13 @@ gfc_variable_attr (gfc_expr *expr, gfc_typespec *ts)
 
 	if (comp->ts.type == BT_CLASS)
 	  {
-	    codimension = CLASS_DATA (comp)->attr.codimension;
+	    codimension |= CLASS_DATA (comp)->attr.codimension;
 	    pointer = CLASS_DATA (comp)->attr.class_pointer;
 	    allocatable = CLASS_DATA (comp)->attr.allocatable;
 	  }
 	else
 	  {
-	    codimension = comp->attr.codimension;
+	    codimension |= comp->attr.codimension;
 	    pointer = comp->attr.pointer;
 	    allocatable = comp->attr.allocatable;
 	  }
@@ -2332,14 +2332,14 @@ gfc_variable_attr (gfc_expr *expr, gfc_typespec *ts)
 /* Return the attribute from a general expression.  */
 
 symbol_attribute
-gfc_expr_attr (gfc_expr *e)
+gfc_expr_attr (gfc_expr *e, bool in_allocate)
 {
   symbol_attribute attr;
 
   switch (e->expr_type)
     {
     case EXPR_VARIABLE:
-      attr = gfc_variable_attr (e, NULL);
+      attr = gfc_variable_attr (e, NULL, in_allocate);
       break;
 
     case EXPR_FUNCTION:
