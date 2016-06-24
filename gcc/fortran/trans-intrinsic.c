@@ -1221,7 +1221,7 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   ASM_VOLATILE_P (tmp) = 1;
   gfc_add_expr_to_block (&se->pre, tmp);
 
-  comp_idx = gfc_get_alloc_ptr_comps_idx (expr);
+  comp_idx = gfc_get_alloc_ptr_comps_idx (array_expr);
   if (comp_idx != -1)
     {
       component_idx = build_int_cst (integer_type_node, comp_idx);
