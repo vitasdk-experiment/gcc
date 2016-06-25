@@ -4634,10 +4634,11 @@ expr_may_alias_variables (gfc_expr *e, bool array_may_alias)
     {
       gfc_symbol *proc_ifc = gfc_get_proc_ifc_for_expr (e);
 
-      if ((proc_ifc->result->ts.type == BT_CLASS
-	   && proc_ifc->result->ts.u.derived->attr.is_class
-	   && CLASS_DATA (proc_ifc->result)->attr.class_pointer)
-	  || proc_ifc->result->attr.pointer)
+      if (proc_ifc->result != NULL
+	  && ((proc_ifc->result->ts.type == BT_CLASS
+	       && proc_ifc->result->ts.u.derived->attr.is_class
+	       && CLASS_DATA (proc_ifc->result)->attr.class_pointer)
+	      || proc_ifc->result->attr.pointer))
 	return true;
       else
 	return false;
