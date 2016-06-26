@@ -4963,6 +4963,10 @@ int
 gfc_get_num_alloc_ptr_comps (gfc_symbol *derived)
 {
   int num = 0;
+
+  if (derived == NULL)
+    return 0;
+
   gfc_component *comp = derived->components;
 
   do
@@ -5023,4 +5027,40 @@ gfc_get_alloc_ptr_comps_idx (gfc_expr *expr)
 
   gcc_unreachable ();
   //return idx;
+}
+
+
+/* Get the symbol of type having the coarray.  */
+
+gfc_symbol *
+gfc_get_caf_type_symbol (gfc_expr *expr)
+{
+  gfc_symbol *derived;
+  switch (expr->expr_type)
+    {
+      case EXPR_VARIABLE:
+	derived = expr->symtree->n.sym;
+	break;
+      default:
+	gcc_unreachable ();
+    }
+
+  if (derived->ts.type == BT_DERIVED)
+    derived = derived->ts.u.derived;
+  else if (derived->ts.type == BT_CLASS)
+    derived = CLASS_DATA (derived)->ts.u.derived;
+  if (derived->attr.codimension)
+    return derived;
+
+  gfc_ref *ref = expr->ref;
+  while (ref)
+    {
+      if (ref->type == REF_COMPONENT
+	  && ref->u.c.component->attr.codimension)
+	return ref->u.c.sym;
+
+      ref = ref->next;
+    }
+
+  return NULL;
 }

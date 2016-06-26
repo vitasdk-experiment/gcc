@@ -1880,6 +1880,9 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
   if (expr->symtree->n.sym->attr.codimension)
     return caf_decl;
 
+  if (expr->symtree->n.sym->ts.type == BT_CLASS)
+    caf_decl = gfc_class_data_get (caf_decl);
+
   /* The following code assumes that the coarray is a component reachable via
      only scalar components/variables; the Fortran standard guarantees this.  */
 
@@ -9473,11 +9476,9 @@ gfc_trans_assignment_1 (gfc_expr * expr1, gfc_expr * expr2, bool init_flag,
 
       /* F2003: Allocate or reallocate lhs of allocatable array.  */
       if (flag_realloc_lhs
-	    && gfc_is_reallocatable_lhs (expr1)
-	    && !gfc_expr_attr (expr1).codimension
-	    && !gfc_is_coindexed (expr1)
-	    && expr2->rank
-	    && !is_runtime_conformable (expr1, expr2))
+	  && gfc_is_reallocatable_lhs (expr1)
+	  && expr2->rank
+	  && !is_runtime_conformable (expr1, expr2))
 	{
 	  realloc_lhs_warning (expr1->ts.type, true, &expr1->where);
 	  ompws_flags &= ~OMPWS_SCALARIZER_WS;
