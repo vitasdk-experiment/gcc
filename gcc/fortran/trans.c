@@ -882,7 +882,7 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
       else
 	{
 	  tree num_alloc_comps;
-	  if (expr->ts.type == BT_DERIVED || expr->ts.type == BT_CLASS)
+	  if (expr->ts.type == BT_DERIVED)
 	    num_alloc_comps = build_int_cst (integer_type_node,
 					     gfc_get_num_alloc_ptr_comps (
 					       gfc_get_caf_type_symbol (expr)));

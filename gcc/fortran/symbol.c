@@ -5047,8 +5047,6 @@ gfc_get_caf_type_symbol (gfc_expr *expr)
 
   if (derived->ts.type == BT_DERIVED)
     derived = derived->ts.u.derived;
-  else if (derived->ts.type == BT_CLASS)
-    derived = CLASS_DATA (derived)->ts.u.derived;
   if (derived->attr.codimension)
     return derived;
 
