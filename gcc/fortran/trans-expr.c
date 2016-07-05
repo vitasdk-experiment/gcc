@@ -1880,7 +1880,8 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
   if (expr->symtree->n.sym->attr.codimension)
     return caf_decl;
 
-  if (expr->symtree->n.sym->ts.type == BT_CLASS)
+  if (expr->symtree->n.sym->ts.type == BT_CLASS
+      && !GFC_CLASS_TYPE_P (TREE_TYPE (caf_decl)))
     caf_decl = gfc_class_data_get (caf_decl);
 
   /* The following code assumes that the coarray is a component reachable via
@@ -1968,7 +1969,32 @@ gfc_get_caf_token_offset (tree *token, tree *offset, tree caf_decl, tree se_expr
   *offset = fold_build2_loc (input_location, PLUS_EXPR, gfc_array_index_type,
 			     *offset, fold_convert (gfc_array_index_type, tmp));
 
-  if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (caf_decl)))
+  if (expr->symtree->n.sym->ts.type == BT_DERIVED
+      && expr->symtree->n.sym->attr.codimension
+      && expr->symtree->n.sym->ts.u.derived->attr.alloc_comp
+      && expr->rank)
+    {
+      gfc_expr *base_expr = gfc_copy_expr (expr);
+      gfc_ref *ref = base_expr->ref;
+      gfc_se se;
+
+      // Iterate through the refs until the last one.
+      while (ref->next)
+	  ref = ref->next;
+
+      if (ref->type == REF_ARRAY
+	  && ref->u.ar.type != AR_FULL)
+	{
+	  ref->u.ar.type = AR_FULL;
+	  ref->u.ar.start[0] = NULL;
+	}
+      gfc_init_se (&se, NULL);
+      gfc_conv_expr_descriptor (&se, base_expr);
+      tmp = gfc_conv_descriptor_data_get (se.expr);
+
+      gfc_free_expr (base_expr);
+    }
+  else if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (caf_decl)))
     tmp = gfc_conv_descriptor_data_get (caf_decl);
   else
    {

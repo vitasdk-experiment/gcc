@@ -4995,6 +4995,9 @@ gfc_get_alloc_ptr_comps_idx (gfc_expr *expr)
   symbol_attribute attr = gfc_expr_attr (expr, true);
   if (!(attr.allocatable || attr.pointer)
       || expr->symtree->n.sym->ts.type != BT_DERIVED
+      // TODO: The next lines are "too short"! A coarray as a derived type's
+      // component being itself a coarray of derived type is not detected
+      // correctly.
       || (expr->symtree->n.sym->ts.type == BT_DERIVED
 	  && !expr->symtree->n.sym->attr.codimension))
     return -1;

@@ -1223,12 +1223,10 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 
   comp_idx = gfc_get_alloc_ptr_comps_idx (array_expr);
   if (comp_idx != -1)
-    {
-      component_idx = build_int_cst (integer_type_node, comp_idx);
-      offset = integer_zero_node;
-    }
+    component_idx = build_int_cst (integer_type_node, comp_idx);
   else
     component_idx = integer_minus_one_node;
+
   tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get, 10,
 			     token, offset, image_index, argse.expr, vec,
 			     dst_var, kind, lhs_kind, may_require_tmp,
@@ -1390,10 +1388,7 @@ conv_caf_send (gfc_code *code) {
 
   comp_idx = gfc_get_alloc_ptr_comps_idx (lhs_expr);
   if (comp_idx != -1)
-    {
-      component_idx = build_int_cst (integer_type_node, comp_idx);
-      offset = integer_zero_node;
-    }
+    component_idx = build_int_cst (integer_type_node, comp_idx);
 
   if (!gfc_is_coindexed (rhs_expr))
     tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_send, 10, token,
