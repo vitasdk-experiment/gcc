@@ -1971,8 +1971,7 @@ gfc_get_caf_token_offset (tree *token, tree *offset, tree caf_decl, tree se_expr
 
   if (expr->symtree->n.sym->ts.type == BT_DERIVED
       && expr->symtree->n.sym->attr.codimension
-      && expr->symtree->n.sym->ts.u.derived->attr.alloc_comp
-      && expr->rank)
+      && expr->symtree->n.sym->ts.u.derived->attr.alloc_comp)
     {
       gfc_expr *base_expr = gfc_copy_expr (expr);
       gfc_ref *ref = base_expr->ref;
@@ -1990,7 +1989,10 @@ gfc_get_caf_token_offset (tree *token, tree *offset, tree caf_decl, tree se_expr
 	}
       gfc_init_se (&se, NULL);
       gfc_conv_expr_descriptor (&se, base_expr);
-      tmp = gfc_conv_descriptor_data_get (se.expr);
+      if (gfc_expr_attr (base_expr).dimension)
+	tmp = gfc_conv_descriptor_data_get (se.expr);
+      else
+	tmp = se.expr;
 
       gfc_free_expr (base_expr);
     }
