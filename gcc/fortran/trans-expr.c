@@ -1986,6 +1986,7 @@ gfc_get_caf_token_offset (tree *token, tree *offset, tree caf_decl, tree se_expr
 	{
 	  ref->u.ar.type = AR_FULL;
 	  ref->u.ar.start[0] = NULL;
+	  ref->u.ar.end[0] = NULL;
 	}
       gfc_init_se (&se, NULL);
       if (gfc_expr_attr (base_expr).dimension)
