@@ -5599,7 +5599,7 @@ gfc_array_deallocate (tree descriptor, tree pstat, tree errmsg, tree errlen,
   tree var;
   tree tmp;
   stmtblock_t block;
-  bool coarray = gfc_is_coarray (expr);
+  bool coarray = gfc_expr_attr (expr).codimension;
 
   gfc_start_block (&block);
 

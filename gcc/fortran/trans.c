@@ -1392,6 +1392,7 @@ gfc_deallocate_with_status (tree pointer, tree status, tree errmsg,
     {
       tree caf_type, token, cond2;
       tree pstat = null_pointer_node;
+      int comp_idx = expr ? gfc_get_alloc_ptr_comps_idx(expr) : -1;
 
       if (errmsg == NULL_TREE)
 	{
@@ -1414,23 +1415,37 @@ gfc_deallocate_with_status (tree pointer, tree status, tree errmsg,
 	  pstat = status;
 	}
 
-      if (GFC_DESCRIPTOR_TYPE_P (caf_type)
-	  && GFC_TYPE_ARRAY_AKIND (caf_type) == GFC_ARRAY_ALLOCATABLE)
-	token = gfc_conv_descriptor_token (caf_decl);
-      else if (DECL_LANG_SPECIFIC (caf_decl)
-	       && GFC_DECL_TOKEN (caf_decl) != NULL_TREE)
-	token = GFC_DECL_TOKEN (caf_decl);
+      if (comp_idx == -1)
+	{
+	  if (GFC_DESCRIPTOR_TYPE_P (caf_type)
+	      && GFC_TYPE_ARRAY_AKIND (caf_type) == GFC_ARRAY_ALLOCATABLE)
+	    token = gfc_conv_descriptor_token (caf_decl);
+	  else if (DECL_LANG_SPECIFIC (caf_decl)
+		   && GFC_DECL_TOKEN (caf_decl) != NULL_TREE)
+	    token = GFC_DECL_TOKEN (caf_decl);
+	  else
+	    {
+	      gcc_assert (GFC_ARRAY_TYPE_P (caf_type)
+			  && GFC_TYPE_ARRAY_CAF_TOKEN (caf_type) != NULL_TREE);
+	      token = GFC_TYPE_ARRAY_CAF_TOKEN (caf_type);
+	    }
+
+	  token = gfc_build_addr_expr  (NULL_TREE, token);
+	  tmp = build_call_expr_loc (input_location,
+				     gfor_fndecl_caf_deregister, 4,
+				     token, pstat, errmsg, errlen);
+	}
       else
 	{
-	  gcc_assert (GFC_ARRAY_TYPE_P (caf_type)
-		      && GFC_TYPE_ARRAY_CAF_TOKEN (caf_type) != NULL_TREE);
-	  token = GFC_TYPE_ARRAY_CAF_TOKEN (caf_type);
+	  tmp = gfc_get_tree_for_caf_expr (expr);
+	  gfc_get_caf_token_offset (&token, NULL, tmp, NULL_TREE, expr);
+	  tmp = build_call_expr_loc (input_location,
+				     gfor_fndecl_caf_deregister_component, 6,
+				     token, build_int_cst (integer_type_node,
+							   comp_idx),
+				     build_fold_addr_expr (pointer),
+				     pstat, errmsg, errlen);
 	}
-
-      token = gfc_build_addr_expr  (NULL_TREE, token);
-      tmp = build_call_expr_loc (input_location,
-	     gfor_fndecl_caf_deregister, 4,
-	     token, pstat, errmsg, errlen);
       gfc_add_expr_to_block (&non_null, tmp);
 
       /* It guarantees memory consistency within the same segment */

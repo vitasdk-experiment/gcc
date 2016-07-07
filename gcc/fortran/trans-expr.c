@@ -1988,11 +1988,16 @@ gfc_get_caf_token_offset (tree *token, tree *offset, tree caf_decl, tree se_expr
 	  ref->u.ar.start[0] = NULL;
 	}
       gfc_init_se (&se, NULL);
-      gfc_conv_expr_descriptor (&se, base_expr);
       if (gfc_expr_attr (base_expr).dimension)
-	tmp = gfc_conv_descriptor_data_get (se.expr);
+	{
+	  gfc_conv_expr_descriptor (&se, base_expr);
+	  tmp = gfc_conv_descriptor_data_get (se.expr);
+	}
       else
-	tmp = se.expr;
+	{
+	  gfc_conv_expr (&se, base_expr);
+	  tmp = se.expr;
+	}
 
       gfc_free_expr (base_expr);
     }

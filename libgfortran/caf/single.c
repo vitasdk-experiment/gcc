@@ -259,6 +259,10 @@ _gfortran_caf_deregister (caf_token_t *token, int *stat, char *errmsg,
 					    NULL, errmsg, errmsg_len);
       }
 
+  /* Free the array of the components.  */
+  if (single_token->components != NULL)
+    free (single_token->components);
+
   free (TOKEN(*token));
 
   if (stat)
