@@ -100,7 +100,7 @@ int _gfortran_caf_num_images (int, int);
 void *_gfortran_caf_register (size_t, caf_register_t, caf_token_t *, int *,
 			      char *, int, int);
 void _gfortran_caf_register_component (caf_token_t, caf_register_t, size_t,
-				       int, void **, int *, char *, int);
+				       int, void **, int *, char *, int, int);
 void _gfortran_caf_deregister (caf_token_t *, int *, char *, int);
 void _gfortran_caf_deregister_component (caf_token_t, int, void **, int *,
 					 char *, int);

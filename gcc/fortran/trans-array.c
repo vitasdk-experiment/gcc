@@ -5599,7 +5599,7 @@ gfc_array_deallocate (tree descriptor, tree pstat, tree errmsg, tree errlen,
   tree var;
   tree tmp;
   stmtblock_t block;
-  bool coarray = gfc_expr_attr (expr).codimension;
+  bool coarray = gfc_caf_attr (expr).codimension;
 
   gfc_start_block (&block);
 
@@ -8662,8 +8662,9 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
   int dim;
   gfc_array_spec * as;
   bool coarray = (flag_coarray == GFC_FCOARRAY_LIB
-		  && gfc_expr_attr(expr1, true).codimension);
-  int caf_comp_idx = -1, caf_num_allocptr_comps = 0;
+		  && gfc_caf_attr(expr1, true).codimension);
+  int caf_comp_idx = -1, caf_num_allocptr_comps = 0,
+      caf_num_sub_allocptr_comps = 0;
   tree token;
 
   /* x = f(...) with x allocatable.  In this case, expr1 is the rhs.
@@ -8986,7 +8987,8 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
 
   if (coarray)
     {
-      caf_comp_idx = gfc_get_alloc_ptr_comps_idx (expr1);
+      caf_comp_idx = gfc_get_alloc_ptr_comps_idx (expr1, NULL,
+						  &caf_num_sub_allocptr_comps);
       caf_num_allocptr_comps =
 	      gfc_get_num_alloc_ptr_comps (gfc_get_caf_type_symbol (expr1));
 
@@ -9027,14 +9029,16 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
 	  gfc_add_expr_to_block (&realloc_block, tmp);
 	  tmp = build_call_expr_loc (input_location,
 				     gfor_fndecl_caf_register_component,
-				     8, token,
+				     9, token,
 				     build_int_cst (integer_type_node,
 						    GFC_CAF_COARRAY_ALLOC),
 				     size2, build_int_cst (integer_type_node,
 							   caf_comp_idx),
 				     gfc_conv_descriptor_data_addr (desc),
 				     null_pointer_node, null_pointer_node,
-				     integer_zero_node);
+				     integer_zero_node,
+				     build_int_cst (integer_type_node,
+						   caf_num_sub_allocptr_comps));
 	  gfc_add_expr_to_block (&realloc_block, tmp);
 	}
       else

@@ -195,7 +195,8 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 void
 _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 				  size_t size, int comp_idx, void **component,
-				  int *stat, char *errmsg, int errmsg_len)
+				  int *stat, char *errmsg, int errmsg_len,
+				  int num_comp)
 {
   caf_single_token_t single_token = TOKEN(token);
 
@@ -239,6 +240,26 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
     }
 
   single_token->components[comp_idx]->memptr = *component;
+  if (num_comp)
+    {
+      single_token->components[comp_idx]->components = (caf_single_token_t *)
+				calloc (num_comp, sizeof (caf_single_token_t));
+      if (unlikely (single_token->components[comp_idx]->components == NULL))
+	{
+	  caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat,
+			      errmsg, errmsg_len);
+	  /* Roll back to prevent memory loss.  */
+	  if (single_token->components[comp_idx]->owning_memory)
+	    {
+	      free (single_token->components[comp_idx]->memptr);
+	      *component = NULL;
+	    }
+	  free (single_token->components[comp_idx]);
+	  single_token->components[comp_idx] = NULL;
+	  return;
+	}
+      single_token->components[comp_idx]->num_comps = num_comp;
+    }
 
   if (stat)
     *stat = 0;
@@ -255,7 +276,7 @@ _gfortran_caf_deregister (caf_token_t *token, int *stat, char *errmsg,
     if (single_token->components[i] != NULL)
       {
 	_gfortran_caf_deregister_component (single_token, i,
-					   &single_token->components[i]->memptr,
+					  &single_token->components[i]->memptr,
 					    NULL, errmsg, errmsg_len);
       }
 
@@ -285,6 +306,16 @@ _gfortran_caf_deregister_component (caf_token_t token, int comp_num,
 
   if (single_token->components[comp_num])
     {
+      if (single_token->components[comp_num]->components != NULL)
+	{
+	  int i;
+	  for (i = 0; i < single_token->components[comp_num]->num_comps; ++i)
+	    if (single_token->components[comp_num]->components[i])
+	      _gfortran_caf_deregister_component (
+		    single_token->components[comp_num], i,
+		    &single_token->components[comp_num]->components[i]->memptr,
+		    stat, errmsg, errmsg_len);
+	}
       if (single_token->components[comp_num]->owning_memory)
 	{
 	  /* Have to free the components memory, because we allocated it. */

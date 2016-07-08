@@ -2923,7 +2923,8 @@ gfc_symbol * gfc_find_dt_in_generic (gfc_symbol *);
 gfc_formal_arglist *gfc_sym_get_dummy_args (gfc_symbol *);
 
 int gfc_get_num_alloc_ptr_comps (gfc_symbol *);
-int gfc_get_alloc_ptr_comps_idx (gfc_expr *);
+int gfc_get_alloc_ptr_comps_idx (gfc_expr *, symbol_attribute* attr = NULL,
+				 int *sub_com_num = NULL);
 gfc_symbol * gfc_get_caf_type_symbol (gfc_expr *);
 
 /* intrinsic.c -- true if working in an init-expr, false otherwise.  */
@@ -3197,9 +3198,9 @@ const char *gfc_dt_lower_string (const char *);
 const char *gfc_dt_upper_string (const char *);
 
 /* primary.c */
-symbol_attribute gfc_variable_attr (gfc_expr *, gfc_typespec *,
-				    bool in_allocate = false);
-symbol_attribute gfc_expr_attr (gfc_expr *, bool in_allocate = false);
+symbol_attribute gfc_variable_attr (gfc_expr *, gfc_typespec *);
+symbol_attribute gfc_expr_attr (gfc_expr *);
+symbol_attribute gfc_caf_attr (gfc_expr *, bool in_allocate = false);
 match gfc_match_rvalue (gfc_expr **);
 match gfc_match_varspec (gfc_expr*, int, bool, bool);
 int gfc_check_digit (char, int);

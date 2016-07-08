@@ -4987,49 +4987,69 @@ gfc_get_num_alloc_ptr_comps (gfc_symbol *derived)
 
 
 /* Get the index of the first referenced allocatable or pointer component with
-   respect to expression's type. */
+   respect to expression's type.  When an attr is provided it is used, else
+   it is recomputed.  When sub_comp_num is non-NULL it gets the number of
+   allocatable and pointer components */
 
 int
-gfc_get_alloc_ptr_comps_idx (gfc_expr *expr)
+gfc_get_alloc_ptr_comps_idx (gfc_expr *expr, symbol_attribute *attr,
+			     int *sub_comp_num)
 {
-  symbol_attribute attr = gfc_expr_attr (expr, true);
-  if (!(attr.allocatable || attr.pointer)
-      || expr->symtree->n.sym->ts.type != BT_DERIVED
-      // TODO: The next lines are "too short"! A coarray as a derived type's
-      // component being itself a coarray of derived type is not detected
-      // correctly.
-      || (expr->symtree->n.sym->ts.type == BT_DERIVED
-	  && !expr->symtree->n.sym->attr.codimension))
+  symbol_attribute attr_mem;
+  if (attr == NULL)
+    {
+      attr_mem = gfc_caf_attr (expr, true);
+      attr = &attr_mem;
+    }
+
+  if (sub_comp_num)
+    *sub_comp_num = 0;
+
+  if (!(attr->allocatable || attr->pointer)
+      || expr->symtree->n.sym->ts.type != BT_DERIVED)
     return -1;
+
+  gcc_assert (attr->codimension);
 
   int idx = 0;
-  gfc_ref *ref = expr->ref;
+  gfc_ref *ref = expr->ref,
+          *comp_ref = NULL;
 
-  while (ref && ref->type != REF_COMPONENT)
-    ref = ref->next;
+  /* Get the last component ref.  */
+  while (ref)
+    {
+      if (ref->type == REF_COMPONENT)
+	comp_ref = ref;
+      ref = ref->next;
+    }
 
-  if (ref == NULL)
+  if (comp_ref == NULL
+      || !comp_ref->u.c.component->attr.allocatable
+      || comp_ref->u.c.component->attr.codimension)
     return -1;
 
-  gfc_symbol *derived = expr->symtree->n.sym->ts.u.derived;
+  gfc_symbol *derived = comp_ref->u.c.sym;
   do
     {
       gfc_component *comp = derived->components;
 
-      while (comp != ref->u.c.component)
+      while (comp != comp_ref->u.c.component)
 	{
 	  ++idx;
 	  comp = comp->next;
 	}
       if (comp != NULL)
-	return idx;
+	{
+	  if (sub_comp_num && comp->ts.type == BT_DERIVED)
+	    *sub_comp_num = gfc_get_num_alloc_ptr_comps (comp->ts.u.derived);
+	  return idx;
+	}
       /* Also catch the components of the super type.  */
       derived = gfc_get_derived_super_type (derived);
     }
   while (derived);
 
   gcc_unreachable ();
-  //return idx;
 }
 
 

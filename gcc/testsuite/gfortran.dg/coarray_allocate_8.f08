@@ -13,6 +13,7 @@ program alloc_comp
   integer :: me,np,n,i
   type(coords) :: coo[*]
 
+  ! with caf_single num_images is always == 1
   me = this_image(); np = num_images()
   n = 100
 
@@ -26,7 +27,11 @@ program alloc_comp
 
   sync all
 
+  ! Check the caf_get()-offset is computed correctly.
   if(me == 1 .and. coo[np]%y(10) /= 11 ) call abort()
+
+  ! Check the whole array is correct.
+  if (me == 1 .and. any( coo[np]%y /= [(i, i=2, 101)] ) ) call abort()
 
   deallocate(coo%x)
 

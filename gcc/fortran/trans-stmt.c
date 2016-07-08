@@ -6273,7 +6273,7 @@ gfc_trans_deallocate (gfc_code *code)
       se.descriptor_only = 1;
       gfc_conv_expr (&se, expr);
 
-      if (expr->rank || gfc_expr_attr (expr).codimension)
+      if (expr->rank || gfc_caf_attr (expr).codimension)
 	{
 	  gfc_ref *ref;
 

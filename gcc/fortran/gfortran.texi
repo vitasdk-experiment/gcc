@@ -3786,7 +3786,7 @@ size or one for a scalar.
 @item @emph{Syntax}:
 @code{void *caf_register_component (caf_token_t token, caf_register_t type,
 size_t size, int comp_num, void **component, int *stat, char *errmsg,
-int errmsg_len)}
+int errmsg_len, int num_comp)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
@@ -3805,6 +3805,8 @@ may be NULL
 @item @var{errmsg} @tab intent(out) When an error occurs, this will be set to
 an error message; may be NULL
 @item @var{errmsg_len} @tab the buffer size of errmsg.
+@item @var{num_comp} @tab the number of allocatable and pointer components in
+the type to register.
 @end multitable
 
 @item @emph{NOTES}
@@ -3988,7 +3990,8 @@ when in a derived type (zero based). When not in a derived type or a
 non-allocatable/non-pointer component is referenced, then -1. When an
 allocatable/pointer component is referenced, then @var{OFFSET} is set to zero
 and the @var{src} and @var{dest} descriptors give the referenced component,
-while the token is the token of the derived type.@end multitable
+while the token is the token of the derived type.
+@end multitable
 
 @item @emph{NOTES}
 It is permitted to have image_id equal the current image; the memory of the
