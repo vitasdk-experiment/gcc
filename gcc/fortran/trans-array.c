@@ -5403,6 +5403,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   gfc_expr **lower;
   gfc_expr **upper;
   gfc_ref *ref, *prev_ref = NULL, *coref;
+  gfc_se caf_se;
   bool allocatable, coarray, dimension, alloc_w_e3_arr_spec = false;
 
   ref = expr->ref;
@@ -5520,6 +5521,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
 	}
     }
 
+  gfc_init_se (&caf_se, NULL);
   gfc_start_block (&elseblock);
 
   /* Allocate memory to store the data.  */
@@ -5532,7 +5534,8 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   if (coarray && flag_coarray == GFC_FCOARRAY_LIB)
     {
       tmp = gfc_get_tree_for_caf_expr (expr);
-      gfc_get_caf_token_offset (&token, NULL, tmp, NULL_TREE, expr);
+      gfc_get_caf_token_offset (&caf_se, &token, NULL, tmp, NULL_TREE, expr);
+      gfc_add_block_to_block (&elseblock, &caf_se.pre);
       token = gfc_build_addr_expr (NULL_TREE, token);
     }
 
@@ -5544,6 +5547,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   else
     gfc_allocate_using_malloc (&elseblock, pointer, size, status);
 
+  gfc_add_block_to_block (&elseblock, &caf_se.post);
   if (dimension)
     {
       cond = gfc_unlikely (fold_build2_loc (input_location, NE_EXPR,
@@ -8666,6 +8670,7 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
   int caf_comp_idx = -1, caf_num_allocptr_comps = 0,
       caf_num_sub_allocptr_comps = 0;
   tree token;
+  gfc_se caf_se;
 
   /* x = f(...) with x allocatable.  In this case, expr1 is the rhs.
      Find the lhs expression in the loop chain and set expr1 and
@@ -8984,6 +8989,7 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
   /* Realloc expression.  Note that the scalarizer uses desc.data
      in the array reference - (*desc.data)[<element>].  */
   gfc_init_block (&realloc_block);
+  gfc_init_se (&caf_se, NULL);
 
   if (coarray)
     {
@@ -8993,7 +8999,8 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
 	      gfc_get_num_alloc_ptr_comps (gfc_get_caf_type_symbol (expr1));
 
       tmp = gfc_get_tree_for_caf_expr (expr1);
-      gfc_get_caf_token_offset (&token, NULL, tmp, NULL_TREE, expr1);
+      gfc_get_caf_token_offset (&caf_se, &token, NULL, tmp, NULL_TREE, expr1);
+      gfc_add_block_to_block (&realloc_block, &caf_se.pre);
     }
   if ((expr1->ts.type == BT_DERIVED)
 	&& expr1->ts.u.derived->attr.alloc_comp)
@@ -9071,6 +9078,7 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
       gfc_add_expr_to_block (&realloc_block, tmp);
     }
 
+  gfc_add_block_to_block (&realloc_block, &caf_se.post);
   realloc_expr = gfc_finish_block (&realloc_block);
 
   /* Only reallocate if sizes are different.  */

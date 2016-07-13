@@ -982,7 +982,7 @@ conv_caf_vector_subscript_elem (stmtblock_t *block, int i, tree desc,
 
   if (vector != NULL_TREE)
     {
-      /* Set dim.lower/upper/stride.  */
+      /* Set vector and kind.  */
       field = gfc_advance_chain (TYPE_FIELDS (type), 0);
       tmp = fold_build3_loc (input_location, COMPONENT_REF, TREE_TYPE (field),
 			 desc, field, NULL_TREE);
@@ -994,7 +994,7 @@ conv_caf_vector_subscript_elem (stmtblock_t *block, int i, tree desc,
     }
   else
     {
-      /* Set vector and kind.  */
+      /* Set dim.lower/upper/stride.  */
       field = gfc_advance_chain (TYPE_FIELDS (type), 0);
       tmp = fold_build3_loc (input_location, COMPONENT_REF, TREE_TYPE (field),
 			     desc, field, NULL_TREE);
@@ -1207,7 +1207,8 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   if (TREE_CODE (TREE_TYPE (caf_decl)) == REFERENCE_TYPE)
     caf_decl = build_fold_indirect_ref_loc (input_location, caf_decl);
   image_index = gfc_caf_get_image_index (&se->pre, array_expr, caf_decl);
-  gfc_get_caf_token_offset (&token, &offset, caf_decl, argse.expr, array_expr);
+  gfc_get_caf_token_offset (se, &token, &offset, caf_decl, argse.expr,
+			    array_expr);
 
   /* No overlap possible as we have generated a temporary.  */
   if (lhs == NULL_TREE)
@@ -1331,7 +1332,9 @@ conv_caf_send (gfc_code *code) {
   if (TREE_CODE (TREE_TYPE (caf_decl)) == REFERENCE_TYPE)
     caf_decl = build_fold_indirect_ref_loc (input_location, caf_decl);
   image_index = gfc_caf_get_image_index (&block, lhs_expr, caf_decl);
-  gfc_get_caf_token_offset (&token, &offset, caf_decl, lhs_se.expr, lhs_expr);
+  tmp = lhs_se.expr;
+  gfc_get_caf_token_offset (&lhs_se, &token, &offset, caf_decl, tmp, lhs_expr);
+  lhs_se.expr = tmp;
 
   /* RHS.  */
   gfc_init_se (&rhs_se, NULL);
@@ -1411,12 +1414,13 @@ conv_caf_send (gfc_code *code) {
       if (TREE_CODE (TREE_TYPE (caf_decl)) == REFERENCE_TYPE)
 	caf_decl = build_fold_indirect_ref_loc (input_location, caf_decl);
       rhs_image_index = gfc_caf_get_image_index (&block, rhs_expr, caf_decl);
-      gfc_get_caf_token_offset (&rhs_token, &rhs_offset, caf_decl, rhs_se.expr,
+      tmp = rhs_se.expr;
+      gfc_get_caf_token_offset (&rhs_se, &rhs_token, &rhs_offset, caf_decl, tmp,
 				rhs_expr);
       tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_sendget, 14,
 				 token, offset, image_index, lhs_se.expr, vec,
 				 rhs_token, rhs_offset, rhs_image_index,
-				 rhs_se.expr, rhs_vec, lhs_kind, rhs_kind,
+				 tmp, rhs_vec, lhs_kind, rhs_kind,
 				 may_require_tmp, component_idx);
     }
   gfc_add_expr_to_block (&block, tmp);
@@ -9019,8 +9023,11 @@ conv_intrinsic_atomic_op (gfc_code *code)
           value = gfc_build_addr_expr (NULL_TREE, tmp);
 	}
 
-      gfc_get_caf_token_offset (&token, &offset, caf_decl, atom, atom_expr);
+      gfc_init_se (&argse, NULL);
+      gfc_get_caf_token_offset (&argse, &token, &offset, caf_decl, atom,
+				atom_expr);
 
+      gfc_add_block_to_block (&block, &argse.pre);
       if (code->resolved_isym->id == GFC_ISYM_ATOMIC_DEF)
 	tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_atomic_def, 7,
 				   token, offset, image_index, value, stat,
@@ -9038,6 +9045,7 @@ conv_intrinsic_atomic_op (gfc_code *code)
 						  (int) atom_expr->ts.kind));
 
       gfc_add_expr_to_block (&block, tmp);
+      gfc_add_block_to_block (&block, &argse.post);
       gfc_add_block_to_block (&block, &post_block);
       return gfc_finish_block (&block);
     }
@@ -9165,7 +9173,10 @@ conv_intrinsic_atomic_ref (gfc_code *code)
       else
 	image_index = integer_zero_node;
 
-      gfc_get_caf_token_offset (&token, &offset, caf_decl, atom, atom_expr);
+      gfc_init_se (&argse, NULL);
+      gfc_get_caf_token_offset (&argse, &token, &offset, caf_decl, atom,
+				atom_expr);
+      gfc_add_block_to_block (&block, &argse.pre);
 
       /* Different type, need type conversion.  */
       if (!POINTER_TYPE_P (TREE_TYPE (value)))
@@ -9185,6 +9196,7 @@ conv_intrinsic_atomic_ref (gfc_code *code)
       if (vardecl != NULL_TREE)
 	gfc_add_modify (&block, orig_value,
 			fold_convert (TREE_TYPE (orig_value), vardecl));
+      gfc_add_block_to_block (&block, &argse.post);
       gfc_add_block_to_block (&block, &post_block);
       return gfc_finish_block (&block);
     }
@@ -9298,7 +9310,10 @@ conv_intrinsic_atomic_cas (gfc_code *code)
           comp = gfc_build_addr_expr (NULL_TREE, tmp);
 	}
 
-      gfc_get_caf_token_offset (&token, &offset, caf_decl, atom, atom_expr);
+      gfc_init_se (&argse, NULL);
+      gfc_get_caf_token_offset (&argse, &token, &offset, caf_decl, atom,
+				atom_expr);
+      gfc_add_block_to_block (&block, &argse.pre);
 
       tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_atomic_cas, 9,
 				 token, offset, image_index, old, comp, new_val,
@@ -9307,6 +9322,7 @@ conv_intrinsic_atomic_cas (gfc_code *code)
 				 build_int_cst (integer_type_node,
 						(int) atom_expr->ts.kind));
       gfc_add_expr_to_block (&block, tmp);
+      gfc_add_block_to_block (&block, &argse.post);
       gfc_add_block_to_block (&block, &post_block);
       return gfc_finish_block (&block);
     }
@@ -9393,7 +9409,8 @@ conv_intrinsic_event_query (gfc_code *code)
 
       image_index = integer_zero_node;
 
-      gfc_get_caf_token_offset (&token, NULL, caf_decl, NULL_TREE, event_expr);
+      gfc_get_caf_token_offset (&se, &token, NULL, caf_decl, NULL_TREE,
+				event_expr);
 
       /* For arrays, obtain the array index.  */
       if (gfc_expr_attr (event_expr).dimension)

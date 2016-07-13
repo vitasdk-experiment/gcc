@@ -1913,8 +1913,8 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 /* Obtain the Coarray token - and optionally also the offset.  */
 
 void
-gfc_get_caf_token_offset (tree *token, tree *offset, tree caf_decl, tree se_expr,
-			  gfc_expr *expr)
+gfc_get_caf_token_offset (gfc_se *se, tree *token, tree *offset, tree caf_decl,
+			  tree se_expr, gfc_expr *expr)
 {
   tree tmp;
 
@@ -1975,7 +1975,7 @@ gfc_get_caf_token_offset (tree *token, tree *offset, tree caf_decl, tree se_expr
     {
       gfc_expr *base_expr = gfc_copy_expr (expr);
       gfc_ref *ref = base_expr->ref;
-      gfc_se se;
+      gfc_se base_se;
 
       // Iterate through the refs until the last one.
       while (ref->next)
@@ -1984,23 +1984,30 @@ gfc_get_caf_token_offset (tree *token, tree *offset, tree caf_decl, tree se_expr
       if (ref->type == REF_ARRAY
 	  && ref->u.ar.type != AR_FULL)
 	{
+	  const int ranksum = ref->u.ar.dimen + ref->u.ar.codimen;
+	  int i;
+	  for (i = 0; i < ranksum; ++i)
+	    {
+	      ref->u.ar.start[i] = NULL;
+	      ref->u.ar.end[i] = NULL;
+	    }
 	  ref->u.ar.type = AR_FULL;
-	  ref->u.ar.start[0] = NULL;
-	  ref->u.ar.end[0] = NULL;
 	}
-      gfc_init_se (&se, NULL);
+      gfc_init_se (&base_se, NULL);
       if (gfc_caf_attr (base_expr).dimension)
 	{
-	  gfc_conv_expr_descriptor (&se, base_expr);
-	  tmp = gfc_conv_descriptor_data_get (se.expr);
+	  gfc_conv_expr_descriptor (&base_se, base_expr);
+	  tmp = gfc_conv_descriptor_data_get (base_se.expr);
 	}
       else
 	{
-	  gfc_conv_expr (&se, base_expr);
-	  tmp = se.expr;
+	  gfc_conv_expr (&base_se, base_expr);
+	  tmp = base_se.expr;
 	}
 
       gfc_free_expr (base_expr);
+      gfc_add_block_to_block (&se->pre, &base_se.pre);
+      gfc_add_block_to_block (&se->post, &base_se.post);
     }
   else if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (caf_decl)))
     tmp = gfc_conv_descriptor_data_get (caf_decl);

@@ -725,7 +725,8 @@ gfc_trans_lock_unlock (gfc_code *code, gfc_exec_op op)
 	  return NULL_TREE;
 	}
 
-      gfc_get_caf_token_offset (&token, NULL, caf_decl, NULL_TREE, code->expr1);
+      gfc_get_caf_token_offset (&se, &token, NULL, caf_decl, NULL_TREE,
+				code->expr1);
 
       if (gfc_is_coindexed (code->expr1))
 	image_index = gfc_caf_get_image_index (&se.pre, code->expr1, caf_decl);
@@ -921,7 +922,10 @@ gfc_trans_event_post_wait (gfc_code *code, gfc_exec_op op)
       return NULL_TREE;
     }
 
-  gfc_get_caf_token_offset (&token, NULL, caf_decl, NULL_TREE, code->expr1);
+  gfc_init_se (&argse, NULL);
+  gfc_get_caf_token_offset (&argse, &token, NULL, caf_decl, NULL_TREE,
+			    code->expr1);
+  gfc_add_block_to_block (&se.pre, &argse.pre);
 
   if (gfc_is_coindexed (code->expr1))
     image_index = gfc_caf_get_image_index (&se.pre, code->expr1, caf_decl);

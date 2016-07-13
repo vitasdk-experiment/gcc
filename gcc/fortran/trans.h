@@ -448,7 +448,7 @@ tree gfc_conv_scalar_to_descriptor (gfc_se *, tree, symbol_attribute);
 void gfc_conv_scalar_char_value (gfc_symbol *sym, gfc_se *se, gfc_expr **expr);
 tree gfc_string_to_single_character (tree len, tree str, int kind);
 tree gfc_get_tree_for_caf_expr (gfc_expr *);
-void gfc_get_caf_token_offset (tree *, tree *, tree, tree, gfc_expr *);
+void gfc_get_caf_token_offset (gfc_se*, tree *, tree *, tree, tree, gfc_expr *);
 tree gfc_caf_get_image_index (stmtblock_t *, gfc_expr *, tree);
 
 /* Find the decl containing the auxiliary variables for assigned variables.  */

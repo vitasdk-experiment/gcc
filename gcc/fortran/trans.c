@@ -1441,19 +1441,25 @@ gfc_deallocate_with_status (tree pointer, tree status, tree errmsg,
 	  tmp = build_call_expr_loc (input_location,
 				     gfor_fndecl_caf_deregister, 4,
 				     token, pstat, errmsg, errlen);
+	  gfc_add_expr_to_block (&non_null, tmp);
 	}
       else
 	{
+	  gfc_se caf_se;
+	  gfc_init_se (&caf_se, NULL);
 	  tmp = gfc_get_tree_for_caf_expr (expr);
-	  gfc_get_caf_token_offset (&token, NULL, tmp, NULL_TREE, expr);
+	  gfc_get_caf_token_offset (&caf_se, &token, NULL, tmp, NULL_TREE,
+				    expr);
+	  gfc_add_block_to_block (&non_null, &caf_se.pre);
 	  tmp = build_call_expr_loc (input_location,
 				     gfor_fndecl_caf_deregister_component, 6,
 				     token, build_int_cst (integer_type_node,
 							   comp_idx),
 				     build_fold_addr_expr (pointer),
 				     pstat, errmsg, errlen);
+	  gfc_add_expr_to_block (&non_null, tmp);
+	  gfc_add_block_to_block (&non_null, &caf_se.post);
 	}
-      gfc_add_expr_to_block (&non_null, tmp);
 
       /* It guarantees memory consistency within the same segment */
       tmp = gfc_build_string_const (strlen ("memory")+1, "memory"),
