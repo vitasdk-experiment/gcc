@@ -91,6 +91,72 @@ typedef struct caf_vector_t {
 caf_vector_t;
 
 
+typedef enum caf_array_ref_t {
+  /* No array ref.  This terminates the array ref.  */
+  CAF_ARR_REF_NONE = 0,
+  /* Reference array elements given by a vector.  Only for this mode
+     caf_reference_t.u.a.dim[i].v is valid.  */
+  CAF_ARR_REF_VECTOR,
+  /* A full array ref where the full array ref (:) is *not* given in the
+     source code, meaning reallocation allowed.  */
+  CAF_ARR_REF_IMP_FULL,
+  /* A full array ref with the (:) explicitly given in the source code.
+     I.e. no reallocation allowed.  */
+  CAF_ARR_REF_EXP_FULL,
+  /* Only a single item is referenced given in the start member.  */
+  CAF_ARR_REF_SINGLE,
+  /* An array ref of the kind (i:), where i is an arbitrary valid index in the
+     array.  The index i is given in the start member.  */
+  CAF_ARR_REF_OPEN_END,
+  /* An array ref of the kind (:i), where the lower bound of the array ref
+     is given by the remote side.  The index i is given in the end member.  */
+  CAF_ARR_REF_OPEN_START,
+} caf_array_ref_t;
+
+/* References to remote components of a derived type.  */
+typedef struct caf_reference_t {
+  /* A pointer to the next ref or NULL.  */
+  struct caf_reference_t *next;
+  /* The type of the reference.  */
+  enum caf_ref_type {
+    CAF_REF_COMPONENT,
+    CAF_REF_ARRAY,
+  } type;
+  /* The size of an item referenced in bytes.  I.e. in an array ref this is
+     the factor to advance the array pointer with to get to the next item.
+     For component refs this gives just the size of the element referenced.  */
+  size_t item_size;
+  union {
+    struct {
+      /* The offset (in bytes) of the component in the derived type.
+	 Unused for allocatable or pointer components.  */
+      ptrdiff_t offset;
+      /* The index of the allocatable or pointer component in the derived
+	 type.  -1 for all other components (then offset is valid).  */
+      int idx;
+    } c;
+    struct {
+      /* The mode of the array ref.  See CAF_ARR_REF_*.  */
+      caf_array_ref_t mode[GFC_MAX_DIMENSIONS];
+      /* Subscript refs (s) or vector refs (v).  */
+      union {
+	struct {
+	  /* The start and end boundary of the ref and the stride.  */
+	  int start, end, stride;
+	} s;
+	struct {
+	  /* nvec entries of kind giving the elements to reference.  */
+	  void *vector;
+	  /* The number of entries in vector.  */
+	  size_t nvec;
+	  /* The integer kind used for the elements in vector.  */
+	  int kind;
+	} v;
+      } dim[GFC_MAX_DIMENSIONS];
+    } a;
+  } u;
+} caf_reference_t;
+
 void _gfortran_caf_init (int *, char ***);
 void _gfortran_caf_finalize (void);
 
@@ -125,15 +191,25 @@ void _gfortran_caf_co_reduce (gfc_descriptor_t *, void* (*) (void *, void*),
 			      int, int, int *, char *, int, int);
 
 void _gfortran_caf_get (caf_token_t, size_t, int, gfc_descriptor_t *,
-                        caf_vector_t *, gfc_descriptor_t *, int, int, bool,
-			int);
+			caf_vector_t *, gfc_descriptor_t *, int, int, bool,
+			int *);
 void _gfortran_caf_send (caf_token_t, size_t, int, gfc_descriptor_t *,
 			 caf_vector_t *, gfc_descriptor_t *, int, int, bool,
-			 int);
+			 int *);
 void _gfortran_caf_sendget (caf_token_t, size_t, int, gfc_descriptor_t *,
 			    caf_vector_t *, caf_token_t, size_t, int,
-			    gfc_descriptor_t *, caf_vector_t *, int, int, bool,
-			    int);
+			    gfc_descriptor_t *, caf_vector_t *, int, int, bool);
+
+void _gfortran_caf_get_by_ref (caf_token_t token, int image_idx,
+	gfc_descriptor_t *dst, caf_reference_t *refs, int dst_kind,
+	int src_kind, bool may_require_tmp, bool dst_reallocatable, int *stat);
+void _gfortran_caf_send_by_ref (caf_token_t token, int image_index,
+	gfc_descriptor_t *src, caf_reference_t *refs, int dst_kind,
+	int src_kind, bool may_require_tmp, int *stat);
+void _gfortran_caf_sendget_by_refs (
+	caf_token_t dst_token, int dst_image_index, caf_reference_t *dst_refs,
+	caf_token_t src_token, int src_image_index, caf_reference_t *src_refs,
+	int dst_kind, int src_kind, bool may_require_tmp, int *stat);
 
 void _gfortran_caf_atomic_define (caf_token_t, size_t, int, void *, int *,
 				  int, int);
