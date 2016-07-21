@@ -2890,7 +2890,7 @@ noce_try_bitop (struct noce_if_info *if_info)
       if (! rtx_equal_p (x, XEXP (a, 0))
           || !CONST_INT_P (XEXP (a, 1))
 	  || (INTVAL (XEXP (a, 1)) & GET_MODE_MASK (mode))
-	     != (unsigned HOST_WIDE_INT) 1 << bitnum)
+	     != HOST_WIDE_INT_1U << bitnum)
         return FALSE;
 
       /* if ((x & C) == 0) x |= C; is transformed to x |= C.   */
@@ -2900,13 +2900,13 @@ noce_try_bitop (struct noce_if_info *if_info)
       else if (code == NE)
 	{
 	  /* if ((x & C) == 0) x ^= C; is transformed to x |= C.   */
-	  result = gen_int_mode ((HOST_WIDE_INT) 1 << bitnum, mode);
+	  result = gen_int_mode (HOST_WIDE_INT_1 << bitnum, mode);
 	  result = simplify_gen_binary (IOR, mode, x, result);
 	}
       else
 	{
 	  /* if ((x & C) != 0) x ^= C; is transformed to x &= ~C.  */
-	  result = gen_int_mode (~((HOST_WIDE_INT) 1 << bitnum), mode);
+	  result = gen_int_mode (~(HOST_WIDE_INT_1 << bitnum), mode);
 	  result = simplify_gen_binary (AND, mode, x, result);
 	}
     }
@@ -2916,7 +2916,7 @@ noce_try_bitop (struct noce_if_info *if_info)
       if (! rtx_equal_p (x, XEXP (a, 0))
 	  || !CONST_INT_P (XEXP (a, 1))
 	  || (INTVAL (XEXP (a, 1)) & GET_MODE_MASK (mode))
-	     != (~((HOST_WIDE_INT) 1 << bitnum) & GET_MODE_MASK (mode)))
+	     != (~(HOST_WIDE_INT_1 << bitnum) & GET_MODE_MASK (mode)))
         return FALSE;
 
       /* if ((x & C) == 0) x &= ~C; is transformed to nothing.  */
@@ -3227,6 +3227,41 @@ noce_convert_multiple_sets (struct noce_if_info *if_info)
 	 the conditional select.  */
       if (if_info->then_else_reversed)
 	std::swap (old_val, new_val);
+
+
+      /* We allow simple lowpart register subreg SET sources in
+	 bb_ok_for_noce_convert_multiple_sets.  Be careful when processing
+	 sequences like:
+	 (set (reg:SI r1) (reg:SI r2))
+	 (set (reg:HI r3) (subreg:HI (r1)))
+	 For the second insn new_val or old_val (r1 in this example) will be
+	 taken from the temporaries and have the wider mode which will not
+	 match with the mode of the other source of the conditional move, so
+	 we'll end up trying to emit r4:HI = cond ? (r1:SI) : (r3:HI).
+	 Wrap the two cmove operands into subregs if appropriate to prevent
+	 that.  */
+      if (GET_MODE (new_val) != GET_MODE (temp))
+	{
+	  machine_mode src_mode = GET_MODE (new_val);
+	  machine_mode dst_mode = GET_MODE (temp);
+	  if (GET_MODE_SIZE (src_mode) <= GET_MODE_SIZE (dst_mode))
+	    {
+	      end_sequence ();
+	      return FALSE;
+	    }
+	  new_val = lowpart_subreg (dst_mode, new_val, src_mode);
+	}
+      if (GET_MODE (old_val) != GET_MODE (temp))
+	{
+	  machine_mode src_mode = GET_MODE (old_val);
+	  machine_mode dst_mode = GET_MODE (temp);
+	  if (GET_MODE_SIZE (src_mode) <= GET_MODE_SIZE (dst_mode))
+	    {
+	      end_sequence ();
+	      return FALSE;
+	    }
+	  old_val = lowpart_subreg (dst_mode, old_val, src_mode);
+	}
 
       /* Actually emit the conditional move.  */
       rtx temp_dest = noce_emit_cmove (if_info, temp, cond_code,

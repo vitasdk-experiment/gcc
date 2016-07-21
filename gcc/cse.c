@@ -3558,7 +3558,7 @@ fold_rtx (rtx x, rtx_insn *insn)
 		 instead we test for the problematic value in a more direct
 		 manner and hope the Sun compilers get it correct.  */
 	      && INTVAL (const_arg1) !=
-	        ((HOST_WIDE_INT) 1 << (HOST_BITS_PER_WIDE_INT - 1))
+	        (HOST_WIDE_INT_1 << (HOST_BITS_PER_WIDE_INT - 1))
 	      && REG_P (folded_arg1))
 	    {
 	      rtx new_const = GEN_INT (-INTVAL (const_arg1));
@@ -4298,6 +4298,22 @@ find_sets_in_insn (rtx_insn *insn, struct set **psets)
   return n_sets;
 }
 
+/* Subroutine of canonicalize_insn.  X is an ASM_OPERANDS in INSN.  */
+
+static void
+canon_asm_operands (rtx x, rtx_insn *insn)
+{
+  for (int i = ASM_OPERANDS_INPUT_LENGTH (x) - 1; i >= 0; i--)
+    {
+      rtx input = ASM_OPERANDS_INPUT (x, i);
+      if (!(REG_P (input) && HARD_REGISTER_P (input)))
+	{
+	  input = canon_reg (input, insn);
+	  validate_change (insn, &ASM_OPERANDS_INPUT (x, i), input, 1);
+	}
+    }
+}
+
 /* Where possible, substitute every register reference in the N_SETS
    number of SETS in INSN with the canonical register.
 
@@ -4361,17 +4377,7 @@ canonicalize_insn (rtx_insn *insn, struct set **psets, int n_sets)
     /* Canonicalize a USE of a pseudo register or memory location.  */
     canon_reg (x, insn);
   else if (GET_CODE (x) == ASM_OPERANDS)
-    {
-      for (i = ASM_OPERANDS_INPUT_LENGTH (x) - 1; i >= 0; i--)
-	{
-	  rtx input = ASM_OPERANDS_INPUT (x, i);
-	  if (!(REG_P (input) && REGNO (input) < FIRST_PSEUDO_REGISTER))
-	    {
-	      input = canon_reg (input, insn);
-	      validate_change (insn, &ASM_OPERANDS_INPUT (x, i), input, 1);
-	    }
-	}
-    }
+    canon_asm_operands (x, insn);
   else if (GET_CODE (x) == CALL)
     {
       canon_reg (x, insn);
@@ -4400,6 +4406,8 @@ canonicalize_insn (rtx_insn *insn, struct set **psets, int n_sets)
 		   && ! (REG_P (XEXP (y, 0))
 			 && REGNO (XEXP (y, 0)) < FIRST_PSEUDO_REGISTER))
 	    canon_reg (y, insn);
+	  else if (GET_CODE (y) == ASM_OPERANDS)
+	    canon_asm_operands (y, insn);
 	  else if (GET_CODE (y) == CALL)
 	    {
 	      canon_reg (y, insn);
@@ -4557,9 +4565,9 @@ cse_insn (rtx_insn *insn)
 	  else
 	    shift = INTVAL (pos);
 	  if (INTVAL (width) == HOST_BITS_PER_WIDE_INT)
-	    mask = ~(HOST_WIDE_INT) 0;
+	    mask = HOST_WIDE_INT_M1;
 	  else
-	    mask = ((HOST_WIDE_INT) 1 << INTVAL (width)) - 1;
+	    mask = (HOST_WIDE_INT_1 << INTVAL (width)) - 1;
 	  val = (val >> shift) & mask;
 	  src_eqv = GEN_INT (val);
 	}
@@ -4657,7 +4665,7 @@ cse_insn (rtx_insn *insn)
 	      && INTVAL (width) < HOST_BITS_PER_WIDE_INT
 	      && (INTVAL (src) & ((HOST_WIDE_INT) (-1) << INTVAL (width))))
 	    src_folded
-	      = GEN_INT (INTVAL (src) & (((HOST_WIDE_INT) 1
+	      = GEN_INT (INTVAL (src) & ((HOST_WIDE_INT_1
 					  << INTVAL (width)) - 1));
 	}
 #endif
@@ -5225,9 +5233,9 @@ cse_insn (rtx_insn *insn)
 		  else
 		    shift = INTVAL (pos);
 		  if (INTVAL (width) == HOST_BITS_PER_WIDE_INT)
-		    mask = ~(HOST_WIDE_INT) 0;
+		    mask = HOST_WIDE_INT_M1;
 		  else
-		    mask = ((HOST_WIDE_INT) 1 << INTVAL (width)) - 1;
+		    mask = (HOST_WIDE_INT_1 << INTVAL (width)) - 1;
 		  val &= ~(mask << shift);
 		  val |= (INTVAL (trial) & mask) << shift;
 		  val = trunc_int_for_mode (val, GET_MODE (dest_reg));

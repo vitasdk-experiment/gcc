@@ -659,7 +659,43 @@ gfc_finish_var_decl (tree decl, gfc_symbol * sym)
 	  || sym->attr.pointer
 	  || sym->attr.allocatable)
       && !DECL_ARTIFICIAL (decl))
-    TREE_STATIC (decl) = 1;
+    {
+      TREE_STATIC (decl) = 1;
+
+      /* Because the size of this variable isn't known until now, we may have
+         greedily added an initializer to this variable (in build_init_assign)
+         even though the max-stack-var-size indicates the variable should be
+         static. Therefore we rip out the automatic initializer here and
+         replace it with a static one.  */
+      gfc_symtree *st = gfc_find_symtree (sym->ns->sym_root, sym->name);
+      gfc_code *prev = NULL;
+      gfc_code *code = sym->ns->code;
+      while (code && code->op == EXEC_INIT_ASSIGN)
+        {
+          /* Look for an initializer meant for this symbol.  */
+          if (code->expr1->symtree == st)
+            {
+              if (prev)
+                prev->next = code->next;
+              else
+                sym->ns->code = code->next;
+
+              break;
+            }
+
+          prev = code;
+          code = code->next;
+        }
+      if (code && code->op == EXEC_INIT_ASSIGN)
+        {
+          /* Keep the init expression for a static initializer.  */
+          sym->value = code->expr2;
+          /* Cleanup the defunct code object, without freeing the init expr.  */
+          code->expr2 = NULL;
+          gfc_free_statement (code);
+          free (code);
+        }
+    }
 
   /* Handle threadprivate variables.  */
   if (sym->attr.threadprivate
@@ -1695,7 +1731,7 @@ gfc_get_symbol_decl (gfc_symbol * sym)
   if (TREE_STATIC (decl)
       && !(sym->attr.use_assoc && !intrinsic_array_parameter)
       && (sym->attr.save || sym->ns->proc_name->attr.is_main_program
-	  || flag_max_stack_var_size == 0
+	  || !gfc_can_put_var_on_stack (DECL_SIZE_UNIT (decl))
 	  || sym->attr.data || sym->ns->proc_name->attr.flavor == FL_MODULE)
       && (flag_coarray != GFC_FCOARRAY_LIB
 	  || !sym->attr.codimension || sym->attr.allocatable))
@@ -3541,16 +3577,16 @@ gfc_build_builtin_function_decls (void)
 	  ppvoid_type_node, pint_type, pchar_type_node, integer_type_node);
 
       gfor_fndecl_caf_get = gfc_build_library_function_decl_with_spec (
-	get_identifier (PREFIX("caf_get")), ".R.RRRWRRR", void_type_node, 10,
+	get_identifier (PREFIX("caf_get")), ".R.RRRWRRWR", void_type_node, 11,
         pvoid_type_node, size_type_node, integer_type_node, pvoid_type_node,
 	pvoid_type_node, pvoid_type_node, integer_type_node, integer_type_node,
-	boolean_type_node, integer_type_node);
+	boolean_type_node, pint_type, integer_type_node);
 
       gfor_fndecl_caf_send = gfc_build_library_function_decl_with_spec (
-	get_identifier (PREFIX("caf_send")), ".R.RRRRRRR", void_type_node, 10,
+	get_identifier (PREFIX("caf_send")), ".R.RRRRRRWR", void_type_node, 11,
         pvoid_type_node, size_type_node, integer_type_node, pvoid_type_node,
 	pvoid_type_node, pvoid_type_node, integer_type_node, integer_type_node,
-	boolean_type_node, integer_type_node);
+	boolean_type_node, pint_type, integer_type_node);
 
       gfor_fndecl_caf_sendget = gfc_build_library_function_decl_with_spec (
 	get_identifier (PREFIX("caf_sendget")), ".R.RRRR.RRRRRR",
@@ -6298,7 +6334,7 @@ gfc_generate_function_code (gfc_namespace * ns)
 			gfc_finish_block (&cleanup));
 
   /* Add all the decls we created during processing.  */
-  decl = saved_function_decls;
+  decl = nreverse (saved_function_decls);
   while (decl)
     {
       tree next;
@@ -6357,7 +6393,7 @@ gfc_generate_function_code (gfc_namespace * ns)
 	 function has already called cgraph_create_node, which also created
 	 the cgraph node for this function.  */
       if (!has_coarray_vars || flag_coarray != GFC_FCOARRAY_LIB)
-	(void) cgraph_node::create (fndecl);
+	(void) cgraph_node::get_create (fndecl);
     }
   else
     cgraph_node::finalize_function (fndecl, true);
@@ -6490,7 +6526,7 @@ gfc_process_block_locals (gfc_namespace* ns)
   if (flag_coarray == GFC_FCOARRAY_LIB && has_coarray_vars)
     generate_coarray_init (ns);
 
-  decl = saved_local_decls;
+  decl = nreverse (saved_local_decls);
   while (decl)
     {
       tree next;

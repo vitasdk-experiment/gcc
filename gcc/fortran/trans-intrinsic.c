@@ -1100,10 +1100,10 @@ static void
 gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 			    tree may_require_tmp)
 {
-  gfc_expr *array_expr;
+  gfc_expr *array_expr, *tmp_stat;
   gfc_se argse;
   tree caf_decl, token, offset, image_index, tmp;
-  tree res_var, dst_var, type, kind, vec;
+  tree res_var, dst_var, type, kind, vec, stat;
   tree component_idx;
   int comp_idx;
 
@@ -1124,6 +1124,19 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   dst_var = lhs;
 
   vec = null_pointer_node;
+  tmp_stat = gfc_find_stat_co(expr);
+
+  if (tmp_stat)
+    {
+      gfc_se stat_se;
+      gfc_init_se(&stat_se, NULL);
+      gfc_conv_expr_reference (&stat_se, tmp_stat);
+      stat = stat_se.expr;
+      gfc_add_block_to_block (&se->pre, &stat_se.pre);
+      gfc_add_block_to_block (&se->post, &stat_se.post);
+    }
+  else
+    stat = null_pointer_node;
 
   gfc_init_se (&argse, NULL);
   if (array_expr->rank == 0)
@@ -1230,8 +1243,9 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 
   tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get, 10,
 			     token, offset, image_index, argse.expr, vec,
-			     dst_var, kind, lhs_kind, may_require_tmp,
+			     dst_var, kind, lhs_kind, may_require_tmp, stat,
 			     component_idx);
+
   gfc_add_expr_to_block (&se->pre, tmp);
 
   if (se->ss)
@@ -1247,11 +1261,11 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 
 static tree
 conv_caf_send (gfc_code *code) {
-  gfc_expr *lhs_expr, *rhs_expr;
+  gfc_expr *lhs_expr, *rhs_expr, *tmp_stat;
   gfc_se lhs_se, rhs_se;
   stmtblock_t block;
   tree caf_decl, token, offset, image_index, tmp, lhs_kind, rhs_kind;
-  tree may_require_tmp;
+  tree may_require_tmp, stat;
   tree lhs_type = NULL_TREE;
   tree vec = null_pointer_node, rhs_vec = null_pointer_node;
   tree component_idx = integer_minus_one_node;
@@ -1264,6 +1278,8 @@ conv_caf_send (gfc_code *code) {
   may_require_tmp = gfc_check_dependency (lhs_expr, rhs_expr, false) == 0
 		    ? boolean_false_node : boolean_true_node;
   gfc_init_block (&block);
+
+  stat = null_pointer_node;
 
   /* LHS.  */
   gfc_init_se (&lhs_se, NULL);
@@ -1393,11 +1409,25 @@ conv_caf_send (gfc_code *code) {
   if (comp_idx != -1)
     component_idx = build_int_cst (integer_type_node, comp_idx);
 
+  tmp_stat = gfc_find_stat_co(lhs_expr);
+
+  if (tmp_stat)
+    {
+      gfc_se stat_se;
+      gfc_init_se (&stat_se, NULL);
+      gfc_conv_expr_reference (&stat_se, tmp_stat);
+      stat = stat_se.expr;
+      gfc_add_block_to_block (&block, &stat_se.pre);
+      gfc_add_block_to_block (&block, &stat_se.post);
+    }
+  else
+    stat = null_pointer_node;
+
   if (!gfc_is_coindexed (rhs_expr))
     tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_send, 10, token,
 			     offset, image_index, lhs_se.expr, vec,
 			     rhs_se.expr, lhs_kind, rhs_kind, may_require_tmp,
-			     component_idx);
+			     stat, component_idx);
   else
     {
       tree rhs_token, rhs_offset, rhs_image_index;

@@ -185,7 +185,7 @@ realloc_string_callback (gfc_code **c, int *walk_subtrees ATTRIBUTE_UNUSED,
   current_code = c;
   inserted_block = NULL;
   changed_statement = NULL;
-  n = create_var (expr2, "trim");
+  n = create_var (expr2, "realloc_string");
   co->expr2 = n;
   return 0;
 }
@@ -665,12 +665,10 @@ create_var (gfc_expr * e, const char *vname)
     {
       gfc_expr *length;
 
+      symbol->ts.u.cl = gfc_new_charlen (ns, NULL);
       length = constant_string_length (e);
       if (length)
-	{
-	  symbol->ts.u.cl = gfc_new_charlen (ns, NULL);
-	  symbol->ts.u.cl->length = length;
-	}
+	symbol->ts.u.cl->length = length;
       else
 	symbol->attr.allocatable = 1;
     }
