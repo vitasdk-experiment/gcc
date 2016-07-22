@@ -5543,7 +5543,8 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
   if (allocatable)
     gfc_allocate_allocatable (&elseblock, pointer, size, token,
 			      status, errmsg, errlen, label_finish, expr,
-			      coref != NULL ? coref->u.ar.as->corank : 0);
+			      coref != NULL ? coref->u.ar.as->corank : 0,
+			      se->expr);
   else
     gfc_allocate_using_malloc (&elseblock, pointer, size, status);
 
@@ -9041,7 +9042,7 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
 						    GFC_CAF_COARRAY_ALLOC),
 				     size2, build_int_cst (integer_type_node,
 							   caf_comp_idx),
-				     gfc_conv_descriptor_data_addr (desc),
+				     gfc_build_addr_expr (NULL_TREE, desc),
 				     null_pointer_node, null_pointer_node,
 				     integer_zero_node,
 				     build_int_cst (integer_type_node,
@@ -9108,7 +9109,7 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
 						    GFC_CAF_COARRAY_ALLOC),
 				     size2, build_int_cst (integer_type_node,
 							   caf_comp_idx),
-				     gfc_conv_descriptor_data_addr (desc),
+				     gfc_build_addr_expr (NULL_TREE, desc),
 				     null_pointer_node, null_pointer_node,
 				     integer_zero_node);
 	  gfc_add_expr_to_block (&alloc_block, tmp);

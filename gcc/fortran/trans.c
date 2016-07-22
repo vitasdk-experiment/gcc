@@ -759,10 +759,10 @@ gfc_allocate_using_lib (stmtblock_t * block, tree pointer, tree size,
 }
 
 static void
-gfc_caf_register_component (stmtblock_t * block, tree pointer, tree size,
-			tree token, tree status, tree errmsg, tree errlen,
-			tree alloc_comp_index, tree num_alloc_comps_in_comp,
-			bool lock_var, bool event_var)
+gfc_caf_register_component (stmtblock_t * block, tree desc, tree size,
+			    tree token, tree status, tree errmsg, tree errlen,
+			    tree alloc_comp_index, tree num_alloc_comps_in_comp,
+			    bool lock_var, bool event_var)
 {
   tree tmp, pstat;
 
@@ -792,13 +792,13 @@ gfc_caf_register_component (stmtblock_t * block, tree pointer, tree size,
 		fold_build2_loc (input_location,
 				 MAX_EXPR, size_type_node, size,
 				 build_int_cst (size_type_node, 1)),
-		alloc_comp_index, gfc_build_addr_expr (NULL_TREE, pointer),
-		pstat, errmsg, errlen, num_alloc_comps_in_comp);
+		alloc_comp_index, gfc_build_addr_expr (NULL_TREE, desc), pstat,
+		errmsg, errlen, num_alloc_comps_in_comp);
 
   gfc_add_expr_to_block (block, tmp);
 
   /* It guarantees memory consistency within the same segment */
-  tmp = gfc_build_string_const (strlen ("memory")+1, "memory"),
+  tmp = gfc_build_string_const (strlen ("memory") + 1, "memory"),
   tmp = build5_loc (input_location, ASM_EXPR, void_type_node,
 		    gfc_build_string_const (1, ""), NULL_TREE, NULL_TREE,
 		    tree_cons (NULL_TREE, tmp, NULL_TREE), NULL_TREE);
@@ -832,7 +832,7 @@ gfc_caf_register_component (stmtblock_t * block, tree pointer, tree size,
 void
 gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 			  tree status, tree errmsg, tree errlen, tree label_finish,
-			  gfc_expr* expr, int corank)
+			  gfc_expr* expr, int corank, tree desc)
 {
   stmtblock_t alloc_block;
   tree tmp, null_mem, alloc, error;
@@ -851,6 +851,7 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 
   if (flag_coarray == GFC_FCOARRAY_LIB)
     caf_attr = gfc_caf_attr (expr, true);
+
   if (flag_coarray == GFC_FCOARRAY_LIB
       && (corank > 0 || caf_attr.codimension))
     {
@@ -878,7 +879,7 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 
       if (comp_idx != -1)
 	{
-	  gfc_caf_register_component (&alloc_block, mem, size, token, status,
+	  gfc_caf_register_component (&alloc_block, desc, size, token, status,
 				      errmsg, errlen,
 				      build_int_cst (integer_type_node,
 						     comp_idx),

@@ -1094,6 +1094,137 @@ conv_caf_vector_subscript (stmtblock_t *block, tree desc, gfc_array_ref *ar)
 }
 
 
+static tree
+conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
+{
+  gfc_ref *ref = expr->ref;
+  tree caf_ref = NULL_TREE, prev_caf_ref = NULL_TREE, reference_type, tmp, tmp2,
+      field, last_type, in_struct;
+
+  last_type = gfc_typenode_for_spec (&expr->symtree->n.sym->ts);
+  while (ref)
+    {
+      if (ref->type == REF_ARRAY && ref->u.ar.codimen > 0
+	  && ref->u.ar.dimen == 0)
+	{
+	  /* Skip pure coindexes.  */
+	  ref = ref->next;
+	  continue;
+	}
+      tmp = gfc_create_var (gfc_get_caf_reference_type(), "caf_ref");
+      reference_type = TREE_TYPE (tmp);
+
+      if (caf_ref == NULL_TREE)
+	caf_ref = tmp;
+
+      /* Construct the chain of refs.  */
+      if (prev_caf_ref != NULL_TREE)
+	{
+	  field = gfc_advance_chain (TYPE_FIELDS (reference_type), 0);
+	  tmp2 = fold_build3_loc (input_location, COMPONENT_REF,
+				  TREE_TYPE (field), prev_caf_ref, field,
+				  NULL_TREE);
+	  gfc_add_modify (block, tmp2, gfc_build_addr_expr (TREE_TYPE (field),
+							    tmp));
+	}
+      prev_caf_ref = tmp;
+
+      /* Set the size of the current type.  */
+      field = gfc_advance_chain (TYPE_FIELDS (reference_type), 2);
+      tmp = fold_build3_loc (input_location, COMPONENT_REF, TREE_TYPE (field),
+			     prev_caf_ref, field, NULL_TREE);
+      gfc_add_modify (block, tmp, fold_convert (TREE_TYPE(field),
+						TYPE_SIZE_UNIT (last_type)));
+
+      switch (ref->type)
+	{
+	case REF_COMPONENT:
+	  last_type = gfc_typenode_for_spec (&ref->u.c.component->ts);
+	  /* Set the type of the ref.  */
+	  field = gfc_advance_chain (TYPE_FIELDS (reference_type), 1);
+	  tmp = fold_build3_loc (input_location, COMPONENT_REF,
+				 TREE_TYPE (field), prev_caf_ref, field,
+				 NULL_TREE);
+	  gfc_add_modify (block, tmp, build_int_cst (integer_type_node,
+						     GFC_CAF_REF_COMPONENT));
+
+	  /* Ref the c in union u.  */
+	  field = gfc_advance_chain (TYPE_FIELDS (reference_type), 3);
+	  tmp = fold_build3_loc (input_location, COMPONENT_REF,
+				 TREE_TYPE (field), prev_caf_ref, field,
+				 NULL_TREE);
+	  field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (field)), 0);
+	  in_struct = fold_build3_loc (input_location, COMPONENT_REF,
+				       TREE_TYPE (field), tmp, field,
+				       NULL_TREE);
+
+	  /* Set the offset.  */
+	  field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (in_struct)), 0);
+	  tmp = fold_build3_loc (input_location, COMPONENT_REF,
+				 TREE_TYPE (field), in_struct, field,
+				 NULL_TREE);
+	  tmp2 = ref->u.c.component->backend_decl->field_decl.offset;
+	  gfc_add_modify (block, tmp, fold_convert (TREE_TYPE (tmp), tmp2));
+
+	  /* Set idx.  */
+	  field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (in_struct)), 1);
+	  tmp = fold_build3_loc (input_location, COMPONENT_REF,
+				 TREE_TYPE (field), in_struct, field,
+				 NULL_TREE);
+	  if (ref->u.c.component->attr.allocatable)
+	    {
+	       int comp_idx = 0;
+	       gfc_symbol *derived = ref->u.c.sym;
+	       gfc_component *comp;
+	       do
+		 {
+		   comp = derived->components;
+
+		   while (comp != ref->u.c.component)
+		     {
+		       ++comp_idx;
+		       comp = comp->next;
+		     }
+		   if (comp != NULL)
+		     break;
+		   /* Also catch the components of the super type.  */
+		   derived = gfc_get_derived_super_type (derived);
+		 }
+	       while (derived);
+	       tmp2 = build_int_cst (integer_type_node, comp_idx);
+	    }
+	  else
+	    tmp2 = integer_minus_one_node;
+	  gfc_add_modify (block, tmp, fold_convert (TREE_TYPE (tmp), tmp2));
+	  break;
+	case REF_ARRAY:
+	  /* Set the type of the ref.  */
+	  field = gfc_advance_chain (TYPE_FIELDS (reference_type), 1);
+	  tmp = fold_build3_loc (input_location, COMPONENT_REF,
+				 TREE_TYPE (field), prev_caf_ref, field,
+				 NULL_TREE);
+	  gfc_add_modify (block, tmp, build_int_cst (integer_type_node,
+						     GFC_CAF_REF_ARRAY));
+
+	  break;
+	default:
+	  gcc_unreachable ();
+	}
+
+      ref = ref->next;
+    }
+
+  if (prev_caf_ref != NULL_TREE)
+    {
+      field = gfc_advance_chain (TYPE_FIELDS (reference_type), 0);
+      tmp = fold_build3_loc (input_location, COMPONENT_REF, TREE_TYPE (field),
+			     prev_caf_ref, field, NULL_TREE);
+      gfc_add_modify (block, tmp, fold_convert (TREE_TYPE (field),
+						  null_pointer_node));
+    }
+  return gfc_build_addr_expr (NULL_TREE, caf_ref);
+}
+
 /* Get data from a remote coarray.  */
 
 static void
@@ -1104,7 +1235,7 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   gfc_se argse;
   tree caf_decl, token, offset, image_index, tmp;
   tree res_var, dst_var, type, kind, vec, stat;
-  tree component_idx;
+  tree caf_reference;
   int comp_idx;
 
   gcc_assert (flag_coarray == GFC_FCOARRAY_LIB);
@@ -1237,14 +1368,17 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 
   comp_idx = gfc_get_alloc_ptr_comps_idx (array_expr);
   if (comp_idx != -1)
-    component_idx = build_int_cst (integer_type_node, comp_idx);
+    {
+      caf_reference = conv_expr_ref_to_caf_ref (&se->pre, array_expr);
+      tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get_by_ref, 9,
+				 token, image_index, dst_var, caf_reference,
+				 lhs_kind, kind, may_require_tmp,
+				 boolean_false_node, stat);
+    }
   else
-    component_idx = integer_minus_one_node;
-
-  tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get, 10,
-			     token, offset, image_index, argse.expr, vec,
-			     dst_var, kind, lhs_kind, may_require_tmp, stat,
-			     component_idx);
+    tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get, 10,
+			       token, offset, image_index, argse.expr, vec,
+			       dst_var, kind, lhs_kind, may_require_tmp, stat);
 
   gfc_add_expr_to_block (&se->pre, tmp);
 

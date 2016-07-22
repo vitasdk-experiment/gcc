@@ -5877,7 +5877,7 @@ gfc_trans_allocate (gfc_code * code)
 	  if (gfc_expr_attr (expr).allocatable)
 	    gfc_allocate_allocatable (&se.pre, se.expr, memsz, NULL_TREE,
 				      stat, errmsg, errlen, label_finish,
-				      expr, 0);
+				      expr, 0, NULL_TREE);
 	  else
 	    gfc_allocate_using_malloc (&se.pre, se.expr, memsz, stat);
 

@@ -119,6 +119,26 @@ enum gfc_coarray_type
 };
 
 
+/* Specify the type of ref handed to the caf communication functions.
+   Please keep in sync with libgfortran/caf/libcaf.h.  */
+enum gfc_caf_ref_type_t {
+  GFC_CAF_REF_COMPONENT,
+  GFC_CAF_REF_ARRAY
+};
+
+
+/* Give the reference type of an array ref.
+   Please keep in sync with libgfortran/caf/libcaf.h.  */
+enum gfc_caf_array_ref_t {
+  GFC_CAF_ARR_REF_NONE = 0,
+  GFC_CAF_ARR_REF_VECTOR,
+  GFC_CAF_ARR_REF_IMP_FULL,
+  GFC_CAF_ARR_REF_EXP_FULL,
+  GFC_CAF_ARR_REF_SINGLE,
+  GFC_CAF_ARR_REF_OPEN_END,
+  GFC_CAF_ARR_REF_OPEN_START
+};
+
 /* The array-specific scalarization information.  The array members of
    this struct are indexed by actual array index, and thus can be sparse.  */
 
@@ -661,7 +681,7 @@ tree gfc_build_memcpy_call (tree, tree, tree);
 
 /* Allocate memory for allocatable variables, with optional status variable.  */
 void gfc_allocate_allocatable (stmtblock_t*, tree, tree, tree, tree,
-			       tree, tree, tree, gfc_expr*, int);
+			       tree, tree, tree, gfc_expr*, int, tree);
 
 /* Allocate memory, with optional status variable.  */
 void gfc_allocate_using_malloc (stmtblock_t *, tree, tree, tree);

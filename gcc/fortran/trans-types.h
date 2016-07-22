@@ -102,5 +102,6 @@ tree gfc_get_dtype (tree);
 
 tree gfc_get_ppc_type (gfc_component *);
 tree gfc_get_caf_vector_type (int dim);
+tree gfc_get_caf_reference_type ();
 
 #endif

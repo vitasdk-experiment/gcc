@@ -36,6 +36,9 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 struct caf_single_token
 {
   void *memptr;
+  /* When this token describes a component, then desc is the array descriptor.
+     For all other coarrays, desc is NULL.  */
+  gfc_descriptor_t *desc;
   int num_comps;
   struct caf_single_token **components;
   /* Set when the caf lib has allocated the memory in memptr and is responsible
@@ -194,11 +197,13 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 
 void
 _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
-				  size_t size, int comp_idx, void **component,
+				  size_t size, int comp_idx,
+				  gfc_descriptor_t *descriptor,
 				  int *stat, char *errmsg, int errmsg_len,
 				  int num_comp)
 {
   caf_single_token_t single_token = TOKEN(token);
+  void *component = GFC_DESCRIPTOR_DATA (descriptor);
 
   if (unlikely (single_token->num_comps < comp_idx))
     {
@@ -217,18 +222,19 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
      return;
     }
 
-  if (*component == NULL)
+  if (component == NULL)
     {
       single_token->components[comp_idx]->owning_memory = true;
+      single_token->components[comp_idx]->desc = descriptor;
 
       if (type == CAF_REGTYPE_LOCK_STATIC || type == CAF_REGTYPE_LOCK_ALLOC
 	  || type == CAF_REGTYPE_CRITICAL || type == CAF_REGTYPE_EVENT_STATIC
 	  || type == CAF_REGTYPE_EVENT_ALLOC)
-	*component = calloc (size, sizeof (bool));
+	component = calloc (size, sizeof (bool));
       else
-	*component = malloc (size);
+	component = malloc (size);
 
-      if (unlikely (*component == NULL))
+      if (unlikely (component == NULL))
 	{
 	  caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat,
 			      errmsg, errmsg_len);
@@ -237,9 +243,10 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 	  single_token->components[comp_idx] = NULL;
 	  return;
 	}
+      GFC_DESCRIPTOR_DATA (descriptor) = component;
     }
 
-  single_token->components[comp_idx]->memptr = *component;
+  single_token->components[comp_idx]->memptr = component;
   if (num_comp)
     {
       single_token->components[comp_idx]->components = (caf_single_token_t *)
@@ -252,7 +259,7 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 	  if (single_token->components[comp_idx]->owning_memory)
 	    {
 	      free (single_token->components[comp_idx]->memptr);
-	      *component = NULL;
+	      component = NULL;
 	    }
 	  free (single_token->components[comp_idx]);
 	  single_token->components[comp_idx] = NULL;
