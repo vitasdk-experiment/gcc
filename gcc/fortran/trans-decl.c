@@ -3605,9 +3605,10 @@ gfc_build_builtin_function_decls (void)
 	boolean_type_node, pint_type);
 
       gfor_fndecl_caf_send_by_ref = gfc_build_library_function_decl_with_spec (
-	get_identifier (PREFIX("caf_send_by_ref")), ".RRRRRRW", void_type_node,
-	8, pvoid_type_node, integer_type_node, pvoid_type_node, pvoid_type_node,
-	integer_type_node, integer_type_node, boolean_type_node, pint_type);
+	get_identifier (PREFIX("caf_send_by_ref")), ".RRRRRRRW", void_type_node,
+	9, pvoid_type_node, integer_type_node, pvoid_type_node, pvoid_type_node,
+	integer_type_node, integer_type_node, boolean_type_node,
+	boolean_type_node, pint_type);
 
       gfor_fndecl_caf_sendget_by_ref =
 	  gfc_build_library_function_decl_with_spec (

@@ -1407,7 +1407,7 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 			   int image_index __attribute__ ((unused)),
 			   gfc_descriptor_t *src, caf_reference_t *refs,
 			   int dst_kind, int src_kind, bool may_require_tmp,
-			   int *stat)
+			   bool dst_reallocatable, int *stat)
 {
   fprintf (stderr, "libcaf_single RUNTIME ERROR: caf_send_by_ref() not "
 	   "implemented.\n");

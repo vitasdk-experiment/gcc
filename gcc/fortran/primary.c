@@ -2382,7 +2382,8 @@ gfc_expr_attr (gfc_expr *e)
 static symbol_attribute
 caf_variable_attr (gfc_expr *expr, bool in_allocate)
 {
-  int dimension, codimension, pointer, allocatable, target, coarray_comp;
+  int dimension, codimension, pointer, allocatable, target, coarray_comp,
+      alloc_comp;
   symbol_attribute attr;
   gfc_ref *ref;
   gfc_symbol *sym;
@@ -2411,6 +2412,7 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
       coarray_comp = attr.coarray_comp;
     }
 
+  alloc_comp = 0;
   target = attr.target;
   if (pointer || attr.proc_pointer)
     target = 1;
@@ -2462,6 +2464,8 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
 	    allocatable = comp->attr.allocatable;
 	    coarray_comp = comp->attr.coarray_comp;
 	  }
+
+	alloc_comp |= allocatable | pointer;
 	if (pointer || attr.proc_pointer)
 	  target = 1;
 
@@ -2479,6 +2483,7 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
   attr.target = target;
   attr.save = sym->attr.save;
   attr.coarray_comp = coarray_comp;
+  attr.alloc_comp = alloc_comp;
 
   return attr;
 }
@@ -2513,6 +2518,7 @@ gfc_caf_attr (gfc_expr *e, bool in_allocate)
 	      attr.dimension = CLASS_DATA (sym)->attr.dimension;
 	      attr.pointer = CLASS_DATA (sym)->attr.class_pointer;
 	      attr.allocatable = CLASS_DATA (sym)->attr.allocatable;
+	      attr.alloc_comp = attr.allocatable;
 	    }
 	}
       else

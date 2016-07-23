@@ -3762,20 +3762,23 @@ be no event, e.g. zero.
 
 @table @asis
 @item @emph{Description}:
-Allocates and/or registers a component of a coarray of derived type.  If an
+Allocates and/or registers a component of a coarray of a derived type.  If an
 error occurs and @var{STAT} is a @code{NULL} pointer, the function shall abort
 with printing an error message and starting the error termination.  If no error
 occurs and @var{STAT} is present, it shall be set to zero.
 Otherwise, it shall be set to a positive value and, if not-@code{NULL},
 @var{ERRMSG} shall be set to a string describing the failure.
 The parameter @var{COMP_NUM} gives the number of the allocatable or
-pointer component to register.  The parameter @var{COMPONENT} is a pointer to the
-address of the component's memory.  Only when the address of the component's
-memory is @code{NULL} then memory of size @var{SIZE} is allocated, registered
-for coarray access and the address of that memory is stored where
-@var{COMPONENT} points to.  When @var{COMPONENT} already points to a
-non-@code{NULL} address, then the memory at that address is registered for
-coarray access and the memory pointed to @var{COMPONENT} is unchanged.
+pointer components to register.  The parameter @var{DESC} is a pointer to the
+array descriptor of the component's memory.  When the component is scalar this
+is a dummy descriptor, where only the data component is of interest.  For array
+components the descriptor is a pointer to array descriptor in the coarray's
+derived type.  Only when the data component of descriptor is @code{NULL} then
+memory of size @var{SIZE} has to be allocated, registered
+for coarray access and the address of that memory is stored in @code{DATA}
+component of the descriptor @var{DESC}.  When @var{DESC}'s @code{DATA}
+component is non-@code{NULL}, then the memory at that address is registered for
+coarray access and the descriptor @var{DESC} shall be unchanged.
 
 For @code{CAF_REGTYPE_COARRAY_STATIC} and @code{CAF_REGTYPE_COARRAY_ALLOC},
 the passed size is the byte size requested.  For @code{CAF_REGTYPE_LOCK_STATIC},
@@ -3785,7 +3788,7 @@ size or one for a scalar.
 
 @item @emph{Syntax}:
 @code{void *caf_register_component (caf_token_t token, caf_register_t type,
-size_t size, int comp_num, void **component, int *stat, char *errmsg,
+size_t size, int comp_num, gfc_descriptor_t *desc, int *stat, char *errmsg,
 int errmsg_len, int num_comp)}
 
 @item @emph{Arguments}:
@@ -3796,17 +3799,18 @@ int errmsg_len, int num_comp)}
 allocated; for lock types and event types, the number of elements.
 @item @var{comp_num} @tab the number of the component in the derived type to
 register. The count starts at zero.
-@item @var{component} @tab intent(inout) the address of the components memory.
-When @code{NULL} the component will be allocated according to the @var{type}
-setting and the address of the memory returned here.  In both cases the memory
+@item @var{desc} @tab intent(inout) the array descriptor of the components
+memory. When the descriptors @code{DATA} is @code{NULL} the component will be
+allocated according to the @var{type} setting and the address of the memory is
+returned in the descriptor's @code{DATA} component.  In both cases the memory
 will be registered for coarray access.
 @item @var{stat} @tab intent(out) For allocatable coarrays, stores the STAT=;
 may be NULL
 @item @var{errmsg} @tab intent(out) When an error occurs, this will be set to
 an error message; may be NULL
 @item @var{errmsg_len} @tab the buffer size of errmsg.
-@item @var{num_comp} @tab the number of allocatable and pointer components in
-the type to register.
+@item @var{num_comp} @tab intent(in) the number of allocatable and pointer
+components in the type to register.
 @end multitable
 
 @item @emph{NOTES}
@@ -3901,8 +3905,7 @@ to a remote image identified by the image_index.
 @item @emph{Syntax}:
 @code{void _gfortran_caf_send (caf_token_t token, size_t offset,
 int image_index, gfc_descriptor_t *dest, caf_vector_t *dst_vector,
-gfc_descriptor_t *src, int dst_kind, int src_kind, bool may_require_tmp,
-int component_idx)}
+gfc_descriptor_t *src, int dst_kind, int src_kind, bool may_require_tmp)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
@@ -3925,12 +3928,6 @@ time that the @var{dest} and @var{src} either cannot overlap or overlap (fully
 or partially) such that walking @var{src} and @var{dest} in element wise
 element order (honoring the stride value) will not lead to wrong results.
 Otherwise, the value is true.
-@item @var{component_idx} @tab the index of the allocatable/pointer component
-when in a derived type (zero based). When not in a derived type or a
-non-allocatable/non-pointer component is referenced, then -1. When an
-allocatable/pointer component is referenced, then @var{OFFSET} is set to zero
-and the @var{src} and @var{dest} descriptors give the referenced component,
-while the token is the token of the derived type.
 @end multitable
 
 @item @emph{NOTES}
@@ -3961,8 +3958,7 @@ image identified by the image_index.
 @item @emph{Syntax}:
 @code{void _gfortran_caf_get (caf_token_t token, size_t offset,
 int image_index, gfc_descriptor_t *src, caf_vector_t *src_vector,
-gfc_descriptor_t *dest, int src_kind, int dst_kind, bool may_require_tmp,
-int component_idx)}
+gfc_descriptor_t *dest, int src_kind, int dst_kind, bool may_require_tmp)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
@@ -3985,12 +3981,6 @@ time that the @var{dest} and @var{src} either cannot overlap or overlap (fully
 or partially) such that walking @var{src} and @var{dest} in element wise
 element order (honoring the stride value) will not lead to wrong results.
 Otherwise, the value is true.
-@item @var{component_idx} @tab the index of the allocatable/pointer component
-when in a derived type (zero based). When not in a derived type or a
-non-allocatable/non-pointer component is referenced, then -1. When an
-allocatable/pointer component is referenced, then @var{OFFSET} is set to zero
-and the @var{src} and @var{dest} descriptors give the referenced component,
-while the token is the token of the derived type.
 @end multitable
 
 @item @emph{NOTES}
@@ -4023,7 +4013,7 @@ dst_image_index.
 int dst_image_index, gfc_descriptor_t *dest, caf_vector_t *dst_vector,
 caf_token_t src_token, size_t src_offset, int src_image_index,
 gfc_descriptor_t *src, caf_vector_t *src_vector, int dst_kind, int src_kind,
-bool may_require_tmp, int component_idx)}
+bool may_require_tmp)}
 
 @item @emph{Arguments}:
 @multitable @columnfractions .15 .70
@@ -4054,12 +4044,6 @@ time that the @var{dest} and @var{src} either cannot overlap or overlap (fully
 or partially) such that walking @var{src} and @var{dest} in element wise
 element order (honoring the stride value) will not lead to wrong results.
 Otherwise, the value is true.
-@item @var{component_idx} @tab the index of the allocatable/pointer component
-when in a derived type (zero based). When not in a derived type or a
-non-allocatable/non-pointer component is referenced, then -1. When an
-allocatable/pointer component is referenced, then @var{OFFSET} is set to zero
-and the @var{src} and @var{dest} descriptors give the referenced component,
-while the token is the token of the derived type.
 @end multitable
 
 @item @emph{NOTES}

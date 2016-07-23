@@ -3391,12 +3391,16 @@ gfc_get_caf_reference_type ()
 
   tmp = build_range_type (gfc_array_index_type, gfc_index_zero_node,
 			  gfc_rank_cst[GFC_MAX_DIMENSIONS - 1]);
-  dim_union_type = build_array_type(union_type, tmp);
+  dim_union_type = build_array_type (union_type, tmp);
 
   chain = 0;
   a_struct_type = make_node (RECORD_TYPE);
   tmp = gfc_add_field_to_struct_1 (a_struct_type, get_identifier ("mode"),
-				   unsigned_char_type_node, &chain);
+		build_array_type (unsigned_char_type_node,
+				  build_range_type (gfc_array_index_type,
+						    gfc_index_zero_node,
+					 gfc_rank_cst[GFC_MAX_DIMENSIONS - 1])),
+		&chain);
   TREE_NO_WARNING (tmp) = 1;
   tmp = gfc_add_field_to_struct_1 (a_struct_type, get_identifier ("dim"),
 				   dim_union_type, &chain);
