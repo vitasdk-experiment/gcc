@@ -1812,7 +1812,7 @@ tree
 gfc_get_tree_for_caf_expr (gfc_expr *expr)
 {
   tree caf_decl;
-  bool found = false;
+  bool found = false, allocatable = false;
   gfc_ref *ref; //, *comp_ref = NULL;
 
   gcc_assert (expr && expr->expr_type == EXPR_VARIABLE);
@@ -1866,10 +1866,15 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 	if (ref->type == REF_ARRAY && ref->u.ar.dimen)
 	  break;
       for ( ; ref; ref = ref->next)
-	if (ref->type == REF_COMPONENT)
-	  gfc_error ("Sorry, coindexed access at %L to a scalar component "
-		     "with an array partref is not yet supported",
-		     &expr->where);
+	if (ref->type == REF_COMPONENT && !allocatable)
+	  {
+	    if (ref->u.c.component->attr.allocatable)
+	      allocatable = true;
+	    else
+	      gfc_error ("Sorry, coindexed access at %L to a scalar component "
+			 "with an array partref is not yet supported",
+			 &expr->where);
+	  }
     }
 
   caf_decl = expr->symtree->n.sym->backend_decl;

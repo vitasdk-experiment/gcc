@@ -1132,13 +1132,6 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 	}
       prev_caf_ref = tmp;
 
-      /* Set the size of the current type.  */
-      field = gfc_advance_chain (TYPE_FIELDS (reference_type), 2);
-      tmp = fold_build3_loc (input_location, COMPONENT_REF, TREE_TYPE (field),
-			     prev_caf_ref, field, NULL_TREE);
-      gfc_add_modify (block, tmp, fold_convert (TREE_TYPE(field),
-						TYPE_SIZE_UNIT (last_type)));
-
       switch (ref->type)
 	{
 	case REF_COMPONENT:
@@ -1291,7 +1284,7 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 		  /* Set start in s.  */
 		  if (start != NULL_TREE)
 		    {
-		      field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (dim)),
+		      field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (tmp)),
 						 0);
 		      tmp2 = fold_build3_loc (input_location, COMPONENT_REF,
 					      TREE_TYPE (field), tmp, field,
@@ -1303,7 +1296,7 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 		  /* Set end in s.  */
 		  if (end != NULL_TREE)
 		    {
-		      field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (dim)),
+		      field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (tmp)),
 						 1);
 		      tmp2 = fold_build3_loc (input_location, COMPONENT_REF,
 					      TREE_TYPE (field), tmp, field,
@@ -1315,7 +1308,7 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 		  /* Set end in s.  */
 		  if (stride != NULL_TREE)
 		    {
-		      field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (dim)),
+		      field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (tmp)),
 						 2);
 		      tmp2 = fold_build3_loc (input_location, COMPONENT_REF,
 					      TREE_TYPE (field), tmp, field,
@@ -1391,6 +1384,13 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 	default:
 	  gcc_unreachable ();
 	}
+
+      /* Set the size of the current type.  */
+      field = gfc_advance_chain (TYPE_FIELDS (reference_type), 2);
+      tmp = fold_build3_loc (input_location, COMPONENT_REF, TREE_TYPE (field),
+			     prev_caf_ref, field, NULL_TREE);
+      gfc_add_modify (block, tmp, fold_convert (TREE_TYPE(field),
+						TYPE_SIZE_UNIT (last_type)));
 
       ref = ref->next;
     }
@@ -1513,6 +1513,8 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
       if (lhs == NULL_TREE)
 	may_require_tmp = boolean_false_node;
 
+      caf_reference = conv_expr_ref_to_caf_ref (&se->pre, array_expr);
+
       /* It guarantees memory consistency within the same segment */
       tmp = gfc_build_string_const (strlen ("memory") + 1, "memory"),
       tmp = build5_loc (input_location, ASM_EXPR, void_type_node,
@@ -1521,7 +1523,6 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
       ASM_VOLATILE_P (tmp) = 1;
       gfc_add_expr_to_block (&se->pre, tmp);
 
-      caf_reference = conv_expr_ref_to_caf_ref (&se->pre, array_expr);
       tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get_by_ref, 9,
 				 token, image_index, dst_var, caf_reference,
 				 lhs_kind, kind, may_require_tmp,

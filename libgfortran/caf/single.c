@@ -1199,67 +1199,100 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 			  int dst_kind, int src_kind, bool may_require_tmp,
 			  bool dst_reallocatable, int *stat)
 {
-  fprintf (stderr, "libcaf_single RUNTIME ERROR: caf_get_by_ref() not "
-	   "implemented.\n");
-  abort ();
-#if 0
+  const char compidxoutofrange = "libcaf_single::caf_get_by_ref(): "
+    "component index out of range.\n";
+  const char unknownreftype = "libcaf_single::caf_get_by_ref(): "
+    "unknown reference type.\n";
   size_t i, k, size;
   int j;
-  int rank = GFC_DESCRIPTOR_RANK (dest);
-  size_t src_size = GFC_DESCRIPTOR_SIZE (src);
-  size_t dst_size = GFC_DESCRIPTOR_SIZE (dest);
+  int rank = GFC_DESCRIPTOR_RANK (dst);
+  size_t src_size;
+  size_t dst_size = GFC_DESCRIPTOR_SIZE (dst);
+  caf_single_token_t single_token = TOKEN (token);
+  void *memptr = single_token->memptr;
+  gfc_descriptor_t *src = single_token->desc;
 
-<<<<<<< HEAD
-  if (comp_idx != -1)
-    {
-      caf_single_token_t single_token = TOKEN (token);
-      if (unlikely (single_token->num_comps < comp_idx))
-	{
-	  fprintf (stderr, "libcaf_single RUNTIME ERROR: Component index %d "
-		   "out of range 0..%d\n", comp_idx, single_token->num_comps);
-	  abort();
-	}
-      token = single_token->components[comp_idx];
-    }
-=======
   if (stat)
     *stat = 0;
 
->>>>>>> vehre/stat4cafsingle
+  /* The first ref has to be a component ref.  */
+  if (refs->type != CAF_REF_COMPONENT)
+    {
+      const char firstneedstobecompref[] = "libcaf_single::caf_get_by_ref(): "
+	"first ref needs to be a component ref.\n";
+      caf_internal_error (firstneedstobecompref, sizeof (firstneedstobecompref),
+			  stat, NULL, 0);
+      return;
+    }
+
+  while (refs)
+    {
+      switch (refs->type)
+	{
+	case CAF_REF_COMPONENT:
+	  if (refs->u.c.idx >= 0)
+	    {
+	      /* Dynamically allocated component.  */
+	      if (unlikely (single_token->num_comps < refs->u.c.idx))
+		{
+		  caf_internal_error (compidxoutofrange, sizeof (compidxoutofrange),
+				      stat, NULL, 0);
+		  return;
+		}
+	      single_token = single_token->components[refs->u.c.idx];
+	      memptr = single_token->memptr;
+	      src = single_token->desc;
+	    }
+	  else
+	    {
+	      memptr += refs->u.c.offset;
+	      src = (gfc_descriptor_t *)memptr;
+	    }
+	  src_size = refs->item_size;
+	  break;
+	case CAF_REF_ARRAY:
+
+	default:
+	  caf_internal_error (unknownreftype, sizeof (unknownreftype), stat,
+			      NULL, 0);
+	  return;
+	}
+      refs = refs->next;
+    }
+
   if (rank == 0)
     {
-      void *sr = (void *) ((char *) MEMTOK (token) + offset);
-      if (GFC_DESCRIPTOR_TYPE (dest) == GFC_DESCRIPTOR_TYPE (src)
+      if (GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src)
 	  && dst_kind == src_kind)
 	{
-	  memmove (GFC_DESCRIPTOR_DATA (dest), sr,
+	  memmove (GFC_DESCRIPTOR_DATA (dst), memptr,
 		   dst_size > src_size ? src_size : dst_size);
-	  if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER && dst_size > src_size)
+	  if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER && dst_size > src_size)
 	    {
 	      if (dst_kind == 1)
-		memset ((void*)(char*) GFC_DESCRIPTOR_DATA (dest) + src_size,
+		memset ((void*)(char*) GFC_DESCRIPTOR_DATA (dst) + src_size,
 			' ', dst_size - src_size);
 	      else /* dst_kind == 4.  */
 		for (i = src_size/4; i < dst_size/4; i++)
-		  ((int32_t*) GFC_DESCRIPTOR_DATA (dest))[i] = (int32_t) ' ';
+		  ((int32_t*) GFC_DESCRIPTOR_DATA (dst))[i] = (int32_t) ' ';
 	    }
 	}
-      else if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER && dst_kind == 1)
-	assign_char1_from_char4 (dst_size, src_size, GFC_DESCRIPTOR_DATA (dest),
-				 sr);
-      else if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER)
-	assign_char4_from_char1 (dst_size, src_size, GFC_DESCRIPTOR_DATA (dest),
-				 sr);
+      else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER && dst_kind == 1)
+	assign_char1_from_char4 (dst_size, src_size, GFC_DESCRIPTOR_DATA (dst),
+				 memptr);
+      else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER)
+	assign_char4_from_char1 (dst_size, src_size, GFC_DESCRIPTOR_DATA (dst),
+				 memptr);
       else
-	convert_type (GFC_DESCRIPTOR_DATA (dest), GFC_DESCRIPTOR_TYPE (dest),
-		      dst_kind, sr, GFC_DESCRIPTOR_TYPE (src), src_kind, stat);
+	convert_type (GFC_DESCRIPTOR_DATA (dst), GFC_DESCRIPTOR_TYPE (dst),
+		      dst_kind, memptr, GFC_DESCRIPTOR_TYPE (src), src_kind, stat);
       return;
     }
 
   size = 1;
   for (j = 0; j < rank; j++)
     {
-      ptrdiff_t dimextent = dest->dim[j]._ubound - dest->dim[j].lower_bound + 1;
+      ptrdiff_t dimextent = dst->dim[j]._ubound - dst->dim[j].lower_bound + 1;
       if (dimextent < 0)
 	dimextent = 0;
       size *= dimextent;
@@ -1267,7 +1300,7 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 
   if (size == 0)
     return;
-
+#if 0
   if (may_require_tmp)
     {
       ptrdiff_t array_offset_sr, array_offset_dst;
@@ -1304,22 +1337,22 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 	  for (j = 0; j < rank-1; j++)
 	    {
 	      array_offset_dst += ((i / (extent*stride))
-				   % (dest->dim[j]._ubound
-				      - dest->dim[j].lower_bound + 1))
-				  * dest->dim[j]._stride;
-	      extent = (dest->dim[j]._ubound - dest->dim[j].lower_bound + 1);
-	      stride = dest->dim[j]._stride;
+				   % (dst->dim[j]._ubound
+				      - dst->dim[j].lower_bound + 1))
+				  * dst->dim[j]._stride;
+	      extent = (dst->dim[j]._ubound - dst->dim[j].lower_bound + 1);
+	      stride = dst->dim[j]._stride;
 	    }
-	  array_offset_dst += (i / extent) * dest->dim[rank-1]._stride;
-	  void *dst = dest->base_addr
-		      + array_offset_dst*GFC_DESCRIPTOR_SIZE (dest);
+	  array_offset_dst += (i / extent) * dst->dim[rank-1]._stride;
+	  void *dst = dst->base_addr
+		      + array_offset_dst*GFC_DESCRIPTOR_SIZE (dst);
           void *sr = tmp + array_offset_sr;
 
-	  if (GFC_DESCRIPTOR_TYPE (dest) == GFC_DESCRIPTOR_TYPE (src)
+	  if (GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src)
 	      && dst_kind == src_kind)
 	    {
 	      memmove (dst, sr, dst_size > src_size ? src_size : dst_size);
-	      if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER
+	      if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER
 	          && dst_size > src_size)
 		{
 		  if (dst_kind == 1)
@@ -1330,12 +1363,12 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		      ((int32_t*) dst)[k] = (int32_t) ' ';
 		}
 	    }
-	  else if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER && dst_kind == 1)
+	  else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER && dst_kind == 1)
 	    assign_char1_from_char4 (dst_size, src_size, dst, sr);
-	  else if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER)
+	  else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER)
 	    assign_char4_from_char1 (dst_size, src_size, dst, sr);
 	  else
-	    convert_type (dst, GFC_DESCRIPTOR_TYPE (dest), dst_kind,
+	    convert_type (dst, GFC_DESCRIPTOR_TYPE (dst), dst_kind,
 			  sr, GFC_DESCRIPTOR_TYPE (src), src_kind, stat);
           array_offset_sr += src_size;
 	}
@@ -1352,14 +1385,14 @@ _gfortran_caf_get_by_ref (caf_token_t token,
       for (j = 0; j < rank-1; j++)
 	{
 	  array_offset_dst += ((i / (extent*stride))
-			       % (dest->dim[j]._ubound
-				  - dest->dim[j].lower_bound + 1))
-			      * dest->dim[j]._stride;
-	  extent = (dest->dim[j]._ubound - dest->dim[j].lower_bound + 1);
-          stride = dest->dim[j]._stride;
+			       % (dst->dim[j]._ubound
+				  - dst->dim[j].lower_bound + 1))
+			      * dst->dim[j]._stride;
+	  extent = (dst->dim[j]._ubound - dst->dim[j].lower_bound + 1);
+          stride = dst->dim[j]._stride;
 	}
-      array_offset_dst += (i / extent) * dest->dim[rank-1]._stride;
-      void *dst = dest->base_addr + array_offset_dst*GFC_DESCRIPTOR_SIZE (dest);
+      array_offset_dst += (i / extent) * dst->dim[rank-1]._stride;
+      void *dst = dst->base_addr + array_offset_dst*GFC_DESCRIPTOR_SIZE (dst);
 
       ptrdiff_t array_offset_sr = 0;
       stride = 1;
@@ -1377,11 +1410,11 @@ _gfortran_caf_get_by_ref (caf_token_t token,
       void *sr = (void *)((char *) MEMTOK (token) + offset
 			  + array_offset_sr*GFC_DESCRIPTOR_SIZE (src));
 
-      if (GFC_DESCRIPTOR_TYPE (dest) == GFC_DESCRIPTOR_TYPE (src)
+      if (GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src)
 	  && dst_kind == src_kind)
 	{
 	  memmove (dst, sr, dst_size > src_size ? src_size : dst_size);
-	  if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER && dst_size > src_size)
+	  if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER && dst_size > src_size)
 	    {
 	      if (dst_kind == 1)
 		memset ((void*)(char*) dst + src_size, ' ', dst_size-src_size);
@@ -1390,12 +1423,12 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		  ((int32_t*) dst)[k] = (int32_t) ' ';
 	    }
 	}
-      else if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER && dst_kind == 1)
+      else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER && dst_kind == 1)
 	assign_char1_from_char4 (dst_size, src_size, dst, sr);
-      else if (GFC_DESCRIPTOR_TYPE (dest) == BT_CHARACTER)
+      else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER)
 	assign_char4_from_char1 (dst_size, src_size, dst, sr);
       else
-	convert_type (dst, GFC_DESCRIPTOR_TYPE (dest), dst_kind,
+	convert_type (dst, GFC_DESCRIPTOR_TYPE (dst), dst_kind,
 		      sr, GFC_DESCRIPTOR_TYPE (src), src_kind, stat);
     }
 #endif
