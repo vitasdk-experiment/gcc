@@ -1871,8 +1871,9 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 	    if (ref->u.c.component->attr.allocatable)
 	      allocatable = true;
 	    else
-	      gfc_error ("Sorry, coindexed access at %L to a scalar component "
-			 "with an array partref is not yet supported",
+	      gfc_error ("Sorry, coindexed access at %L to a scalar "
+			 "with a non-allocatable component with an array "
+			 "partref is not yet supported",
 			 &expr->where);
 	  }
     }
