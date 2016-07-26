@@ -9102,7 +9102,28 @@ alloc_scalar_allocatable_for_assignment (stmtblock_t *block,
   size_in_bytes = fold_build2_loc (input_location, MAX_EXPR, size_type_node,
 				   size_in_bytes, size_one_node);
 
-  if (expr1->ts.type == BT_DERIVED && expr1->ts.u.derived->attr.alloc_comp)
+  if (gfc_caf_attr (expr1).codimension && flag_coarray == GFC_FCOARRAY_LIB)
+    {
+      tree caf_decl, token;
+      gfc_se caf_se;
+      symbol_attribute attr;
+
+      gfc_clear_attr (&attr);
+      gfc_init_se (&caf_se, NULL);
+
+      caf_decl = gfc_get_tree_for_caf_expr (expr1);
+      gfc_get_caf_token_offset (&caf_se, &token, NULL, caf_decl, NULL_TREE,
+				NULL);
+      tmp = gfc_conv_scalar_to_descriptor (&caf_se, lse.expr, attr);
+      gfc_add_block_to_block (block, &caf_se.pre);
+      gfc_allocate_allocatable (block, lse.expr, size_in_bytes,
+				gfc_build_addr_expr (NULL_TREE, token),
+				NULL_TREE, NULL_TREE, NULL_TREE, jump_label1,
+				expr1, 1, tmp);
+      gfc_add_modify (block, lse.expr, fold_convert (TREE_TYPE (lse.expr),
+					  gfc_conv_descriptor_data_get (tmp)));
+    }
+  else if (expr1->ts.type == BT_DERIVED && expr1->ts.u.derived->attr.alloc_comp)
     {
       tmp = build_call_expr_loc (input_location,
 				 builtin_decl_explicit (BUILT_IN_CALLOC),

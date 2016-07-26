@@ -57,6 +57,11 @@ typedef struct caf_single_token *caf_single_token_t;
 /* Global variables.  */
 caf_static_t *caf_static_list = NULL;
 
+static size_t
+smax(size_t s1, size_t s2)
+{
+  return s1 > s2 ? s1 : s2;
+}
 
 /* Keep in sync with mpi.c.  */
 static void
@@ -1192,6 +1197,7 @@ _gfortran_caf_sendget (caf_token_t dst_token, size_t dst_offset,
   GFC_DESCRIPTOR_DATA (src) = src_base;
 }
 
+
 void
 _gfortran_caf_get_by_ref (caf_token_t token,
 			  int image_index __attribute__ ((unused)),
@@ -1199,10 +1205,12 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 			  int dst_kind, int src_kind, bool may_require_tmp,
 			  bool dst_reallocatable, int *stat)
 {
-  const char compidxoutofrange = "libcaf_single::caf_get_by_ref(): "
+  const char compidxoutofrange[] = "libcaf_single::caf_get_by_ref(): "
     "component index out of range.\n";
-  const char unknownreftype = "libcaf_single::caf_get_by_ref(): "
+  const char unknownreftype[] = "libcaf_single::caf_get_by_ref(): "
     "unknown reference type.\n";
+  const char unknownarrreftype[] = "libcaf_single::caf_get_by_ref(): "
+    "unknown array reference type.\n";
   size_t i, k, size;
   int j;
   int rank = GFC_DESCRIPTOR_RANK (dst);
@@ -1211,6 +1219,8 @@ _gfortran_caf_get_by_ref (caf_token_t token,
   caf_single_token_t single_token = TOKEN (token);
   void *memptr = single_token->memptr;
   gfc_descriptor_t *src = single_token->desc;
+  caf_reference_t *riter = refs;
+  long delta;
 
   if (stat)
     *stat = 0;
@@ -1225,40 +1235,92 @@ _gfortran_caf_get_by_ref (caf_token_t token,
       return;
     }
 
-  while (refs)
+  /* Compute the size of the result.  In the beginning size just counts the
+     number of elements.  */
+  size = 1;
+  while (riter)
     {
-      switch (refs->type)
+      switch (riter->type)
 	{
 	case CAF_REF_COMPONENT:
-	  if (refs->u.c.idx >= 0)
+	  if (riter->u.c.idx >= 0)
 	    {
 	      /* Dynamically allocated component.  */
-	      if (unlikely (single_token->num_comps < refs->u.c.idx))
+	      if (unlikely (single_token->num_comps < riter->u.c.idx))
 		{
 		  caf_internal_error (compidxoutofrange, sizeof (compidxoutofrange),
 				      stat, NULL, 0);
 		  return;
 		}
-	      single_token = single_token->components[refs->u.c.idx];
+	      single_token = single_token->components[riter->u.c.idx];
 	      memptr = single_token->memptr;
 	      src = single_token->desc;
 	    }
 	  else
 	    {
-	      memptr += refs->u.c.offset;
+	      memptr += riter->u.c.offset;
 	      src = (gfc_descriptor_t *)memptr;
 	    }
-	  src_size = refs->item_size;
 	  break;
 	case CAF_REF_ARRAY:
-
+	  for (i = 0; riter->u.a.mode[i] != CAF_ARR_REF_NONE; ++i)
+	    {
+	      switch (riter->u.a.mode[i])
+		{
+		case CAF_ARR_REF_VECTOR:
+		  delta = riter->u.a.dim[i].v.nvec;
+		  break;
+		case CAF_ARR_REF_IMP_FULL:
+		case CAF_ARR_REF_EXP_FULL:
+		  delta = (src->dim[i]._ubound - src->dim[i].lower_bound + 1)
+		      / src->dim[i]._stride;
+		  break;
+		case CAF_ARR_REF_RANGE:
+		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start
+			   + 1) / riter->u.a.dim[i].s.stride;
+		  break;
+		case CAF_ARR_REF_SINGLE:
+		  delta = 1;
+		  break;
+		case CAF_ARR_REF_OPEN_END:
+		  delta = (src->dim[i]._ubound - riter->u.a.dim[i].s.start + 1)
+		      / smax(riter->u.a.dim[i].s.stride, src->dim[i]._stride);
+		  break;
+		case CAF_ARR_REF_OPEN_START:
+		  delta = (riter->u.a.dim[i].s.end - src->dim[i].lower_bound
+			   + 1)
+		      / smax(riter->u.a.dim[i].s.stride, src->dim[i]._stride);
+		  break;
+		default:
+		  caf_internal_error (unknownarrreftype,
+				      sizeof (unknownarrreftype), stat,
+				      NULL, 0);
+		  return;
+		}
+	      if (delta <= 0)
+		return;
+	      size *= (index_type)delta;
+	    }
+	  /* For now take the first entry from the array to proceed in size
+	     calculation.
+	     TODO: Take the actually first reffed item of the array, because
+		   the first one may lead to unallocated data.  */
+	  memptr = GFC_DESCRIPTOR_DATA (src);
+	  break;
 	default:
 	  caf_internal_error (unknownreftype, sizeof (unknownreftype), stat,
 			      NULL, 0);
 	  return;
 	}
-      refs = refs->next;
+      src_size = riter->item_size;
+      riter = riter->next;
     }
+  if (size == 0 || src_size == 0)
+    return;
+  /* Postcondition:
+     - size contains the number of elements to store in the destination array,
+     - src_size gives the size in bytes of each item in the destination array.
+  */
 
   if (rank == 0)
     {
@@ -1289,17 +1351,6 @@ _gfortran_caf_get_by_ref (caf_token_t token,
       return;
     }
 
-  size = 1;
-  for (j = 0; j < rank; j++)
-    {
-      ptrdiff_t dimextent = dst->dim[j]._ubound - dst->dim[j].lower_bound + 1;
-      if (dimextent < 0)
-	dimextent = 0;
-      size *= dimextent;
-    }
-
-  if (size == 0)
-    return;
 #if 0
   if (may_require_tmp)
     {

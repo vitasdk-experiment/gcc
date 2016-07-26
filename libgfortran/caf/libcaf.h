@@ -151,7 +151,7 @@ typedef struct caf_reference_t {
       union {
 	struct {
 	  /* The start and end boundary of the ref and the stride.  */
-	  int start, end, stride;
+	  index_type start, end, stride;
 	} s;
 	struct {
 	  /* nvec entries of kind giving the elements to reference.  */

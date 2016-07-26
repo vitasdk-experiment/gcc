@@ -5873,8 +5873,33 @@ gfc_trans_allocate (gfc_code * code)
 	    /* Handle size computation of the type declared to alloc.  */
 	    memsz = TYPE_SIZE_UNIT (TREE_TYPE (TREE_TYPE (se.expr)));
 
+	  if (gfc_caf_attr (expr).codimension
+	      && flag_coarray == GFC_FCOARRAY_LIB)
+	    {
+	      /* Scalar allocatable components in coarray'ed derived types make
+		 it here and are treated now.  */
+	      tree caf_decl, token;
+	      gfc_se caf_se;
+	      symbol_attribute attr;
+
+	      gfc_clear_attr (&attr);
+	      gfc_init_se (&caf_se, NULL);
+
+	      caf_decl = gfc_get_tree_for_caf_expr (expr);
+	      gfc_get_caf_token_offset (&caf_se, &token, NULL, caf_decl,
+					NULL_TREE, NULL);
+	      tmp = gfc_conv_scalar_to_descriptor (&caf_se, se.expr, attr);
+	      gfc_add_block_to_block (&se.pre, &caf_se.pre);
+	      gfc_allocate_allocatable (&se.pre, se.expr, memsz,
+					gfc_build_addr_expr (NULL_TREE, token),
+					NULL_TREE, NULL_TREE, NULL_TREE,
+					label_finish, expr, 1, tmp);
+	      gfc_add_modify (&se.pre, se.expr,
+			      fold_convert (TREE_TYPE (se.expr),
+					   gfc_conv_descriptor_data_get (tmp)));
+	    }
 	  /* Allocate - for non-pointers with re-alloc checking.  */
-	  if (gfc_expr_attr (expr).allocatable)
+	  else if (gfc_expr_attr (expr).allocatable)
 	    gfc_allocate_allocatable (&se.pre, se.expr, memsz, NULL_TREE,
 				      stat, errmsg, errlen, label_finish,
 				      expr, 0, NULL_TREE);
