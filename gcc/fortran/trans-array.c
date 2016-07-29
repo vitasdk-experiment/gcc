@@ -5541,7 +5541,7 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
 
   /* The allocatable variant takes the old pointer as first argument.  */
   if (allocatable)
-    gfc_allocate_allocatable (&elseblock, pointer, size, token,
+    gfc_allocate_allocatable (&elseblock, pointer, size, *nelems, token,
 			      status, errmsg, errlen, label_finish, expr,
 			      coref != NULL ? coref->u.ar.as->corank : 0,
 			      se->expr);
@@ -9104,14 +9104,16 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
 	{
 	  tmp = build_call_expr_loc (input_location,
 				     gfor_fndecl_caf_register_component,
-				     8, token,
+				     9, token,
 				     build_int_cst (integer_type_node,
 						    GFC_CAF_COARRAY_ALLOC),
 				     size2, build_int_cst (integer_type_node,
 							   caf_comp_idx),
 				     gfc_build_addr_expr (NULL_TREE, desc),
 				     null_pointer_node, null_pointer_node,
-				     integer_zero_node);
+				     integer_zero_node,
+				     build_int_cst (integer_type_node,
+						   caf_num_sub_allocptr_comps));
 	  gfc_add_expr_to_block (&alloc_block, tmp);
 	}
       else

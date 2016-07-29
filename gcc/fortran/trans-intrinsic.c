@@ -1410,7 +1410,7 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 
 static void
 gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
-			    tree may_require_tmp)
+			    tree may_require_tmp, bool may_realloc)
 {
   gfc_expr *array_expr, *tmp_stat;
   gfc_se argse;
@@ -1418,7 +1418,6 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   tree res_var, dst_var, type, kind, vec, stat;
   tree caf_reference;
   symbol_attribute caf_attr;
-  bool may_realloc = false;
 
   gcc_assert (flag_coarray == GFC_FCOARRAY_LIB);
 
@@ -1487,7 +1486,7 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 					   &array_expr->where);
 	      res_var = se->ss->info->data.array.descriptor;
 	      dst_var = gfc_build_addr_expr (NULL_TREE, res_var);
-	      may_realloc = true;
+	      may_realloc = false;
 	      tmp = gfc_conv_descriptor_data_get (res_var);
 	      tmp = gfc_deallocate_with_status (tmp, NULL_TREE, NULL_TREE,
 						NULL_TREE, NULL_TREE, true,
@@ -1495,8 +1494,6 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 	      gfc_add_expr_to_block (&se->post, tmp);
 	    }
 	}
-      else
-	may_realloc = array_expr->rank > 0 && caf_attr.allocatable;
 
       kind = build_int_cst (integer_type_node, expr->ts.kind);
       if (lhs_kind == NULL_TREE)
@@ -1745,10 +1742,11 @@ conv_caf_send (gfc_code *code) {
      temporary and a loop.  */
   if (!gfc_is_coindexed (lhs_expr))
     {
+      bool lhs_may_realloc = lhs_expr->rank > 0 && lhs_caf_attr.allocatable;
       gcc_assert (gfc_is_coindexed (rhs_expr));
       gfc_init_se (&rhs_se, NULL);
       gfc_conv_intrinsic_caf_get (&rhs_se, rhs_expr, lhs_se.expr, lhs_kind,
-				  may_require_tmp);
+				  may_require_tmp, lhs_may_realloc);
       gfc_add_block_to_block (&block, &rhs_se.pre);
       gfc_add_block_to_block (&block, &rhs_se.post);
       gfc_add_block_to_block (&block, &lhs_se.post);
@@ -8441,7 +8439,8 @@ gfc_conv_intrinsic_function (gfc_se * se, gfc_expr * expr)
       break;
 
     case GFC_ISYM_CAF_GET:
-      gfc_conv_intrinsic_caf_get (se, expr, NULL_TREE, NULL_TREE, NULL_TREE);
+      gfc_conv_intrinsic_caf_get (se, expr, NULL_TREE, NULL_TREE, NULL_TREE,
+				  false);
       break;
 
     case GFC_ISYM_CMPLX:

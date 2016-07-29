@@ -5890,7 +5890,7 @@ gfc_trans_allocate (gfc_code * code)
 					NULL_TREE, NULL);
 	      tmp = gfc_conv_scalar_to_descriptor (&caf_se, se.expr, attr);
 	      gfc_add_block_to_block (&se.pre, &caf_se.pre);
-	      gfc_allocate_allocatable (&se.pre, se.expr, memsz,
+	      gfc_allocate_allocatable (&se.pre, se.expr, memsz, NULL_TREE,
 					gfc_build_addr_expr (NULL_TREE, token),
 					NULL_TREE, NULL_TREE, NULL_TREE,
 					label_finish, expr, 1, tmp);
@@ -5901,8 +5901,8 @@ gfc_trans_allocate (gfc_code * code)
 	  /* Allocate - for non-pointers with re-alloc checking.  */
 	  else if (gfc_expr_attr (expr).allocatable)
 	    gfc_allocate_allocatable (&se.pre, se.expr, memsz, NULL_TREE,
-				      stat, errmsg, errlen, label_finish,
-				      expr, 0, NULL_TREE);
+				      NULL_TREE, stat, errmsg, errlen,
+				      label_finish, expr, 0, NULL_TREE);
 	  else
 	    gfc_allocate_using_malloc (&se.pre, se.expr, memsz, stat);
 

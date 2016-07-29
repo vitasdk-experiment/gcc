@@ -9116,7 +9116,7 @@ alloc_scalar_allocatable_for_assignment (stmtblock_t *block,
 				NULL);
       tmp = gfc_conv_scalar_to_descriptor (&caf_se, lse.expr, attr);
       gfc_add_block_to_block (block, &caf_se.pre);
-      gfc_allocate_allocatable (block, lse.expr, size_in_bytes,
+      gfc_allocate_allocatable (block, lse.expr, size_in_bytes, NULL_TREE,
 				gfc_build_addr_expr (NULL_TREE, token),
 				NULL_TREE, NULL_TREE, NULL_TREE, jump_label1,
 				expr1, 1, tmp);

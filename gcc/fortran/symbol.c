@@ -5063,6 +5063,7 @@ gfc_symbol *
 gfc_get_caf_type_symbol (gfc_expr *expr)
 {
   gfc_symbol *derived;
+  bool coarray;
   switch (expr->expr_type)
     {
       case EXPR_VARIABLE:
@@ -5072,9 +5073,10 @@ gfc_get_caf_type_symbol (gfc_expr *expr)
 	gcc_unreachable ();
     }
 
+  coarray = derived->attr.codimension;
   if (derived->ts.type == BT_DERIVED)
     derived = derived->ts.u.derived;
-  if (derived->attr.codimension)
+  if (coarray || derived->attr.codimension)
     return derived;
 
   gfc_ref *ref = expr->ref;

@@ -830,9 +830,10 @@ gfc_caf_register_component (stmtblock_t * block, tree desc, tree size,
     expr must be set to the original expression being allocated for its locus
     and variable name in case a runtime error has to be printed.  */
 void
-gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
-			  tree status, tree errmsg, tree errlen, tree label_finish,
-			  gfc_expr* expr, int corank, tree desc)
+gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree nelems,
+			  tree token, tree status, tree errmsg, tree errlen,
+			  tree label_finish, gfc_expr* expr, int corank,
+			  tree desc)
 {
   stmtblock_t alloc_block;
   tree tmp, null_mem, alloc, error;
@@ -867,7 +868,15 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 		       && expr->ts.u.derived->intmod_sym_id
 		         == ISOFORTRAN_EVENT_TYPE;
       int sub_comp_num, comp_idx;
+      tree sub_comp_tree;
       comp_idx = gfc_get_alloc_ptr_comps_idx(expr, &caf_attr, &sub_comp_num);
+      if (nelems != NULL_TREE && sub_comp_num != 0)
+	sub_comp_tree = fold_build2_loc (input_location, MULT_EXPR,
+					 integer_type_node, nelems,
+					 build_int_cst (integer_type_node,
+							sub_comp_num));
+      else
+	sub_comp_tree = build_int_cst (integer_type_node, sub_comp_num);
 
       /* In the front end, we represent the lock variable as pointer. However,
 	 the FE only passes the pointer around and leaves the actual
@@ -883,17 +892,29 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree token,
 				      errmsg, errlen,
 				      build_int_cst (integer_type_node,
 						     comp_idx),
-				      build_int_cst (integer_type_node,
-						     sub_comp_num),
-				      lock_var, event_var);
+				      sub_comp_tree, lock_var, event_var);
 	}
       else
 	{
 	  tree num_alloc_comps;
 	  if (expr->ts.type == BT_DERIVED)
-	    num_alloc_comps = build_int_cst (integer_type_node,
-					     gfc_get_num_alloc_ptr_comps (
-					       gfc_get_caf_type_symbol (expr)));
+	    {
+	      int int_num_alloc_comps = gfc_get_num_alloc_ptr_comps (
+		    gfc_get_caf_type_symbol (expr));
+	      if (int_num_alloc_comps > 0)
+		{
+		  num_alloc_comps = build_int_cst (integer_type_node,
+						   int_num_alloc_comps);
+		  if (nelems != NULL_TREE)
+		    num_alloc_comps = fold_build2_loc (input_location,
+						       MULT_EXPR,
+						       integer_type_node,
+						       nelems,
+						       num_alloc_comps);
+		}
+	      else
+		num_alloc_comps = integer_zero_node;
+	    }
 	  else
 	    num_alloc_comps = integer_zero_node;
 	  gfc_allocate_using_lib (&alloc_block, mem, size, token, status,
