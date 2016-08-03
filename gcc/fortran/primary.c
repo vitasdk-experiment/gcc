@@ -2402,6 +2402,7 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
       pointer = CLASS_DATA (sym)->attr.class_pointer;
       allocatable = CLASS_DATA (sym)->attr.allocatable;
       coarray_comp = CLASS_DATA (sym)->attr.coarray_comp;
+      alloc_comp = CLASS_DATA (sym)->ts.u.derived->attr.alloc_comp;
     }
   else
     {
@@ -2410,9 +2411,10 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
       pointer = attr.pointer;
       allocatable = attr.allocatable;
       coarray_comp = attr.coarray_comp;
+      alloc_comp = sym->ts.type == BT_DERIVED ?
+	    sym->ts.u.derived->attr.alloc_comp : 0;
     }
 
-  alloc_comp = 0;
   target = attr.target;
   if (pointer || attr.proc_pointer)
     target = 1;
@@ -2432,7 +2434,7 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
 	  case AR_ELEMENT:
 	    /* Handle coarrays.  */
 	    if (ref->u.ar.dimen > 0 && !in_allocate)
-	      allocatable = pointer = 0;
+	      allocatable = pointer = alloc_comp = 0;
 	    break;
 
 	  case AR_UNKNOWN:

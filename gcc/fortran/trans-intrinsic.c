@@ -1262,15 +1262,16 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 		      gfc_conv_expr (&se, ref->u.ar.start[i]);
 		      gfc_add_block_to_block (block, &se.pre);
 		      start = gfc_evaluate_now (se.expr, block);
-		      mode_rhs = build_int_cst (unsigned_char_type_node,
-						ref->u.ar.dimen_type[i] ==
+		      if (mode_rhs == NULL_TREE)
+			mode_rhs = build_int_cst (unsigned_char_type_node,
+						  ref->u.ar.dimen_type[i] ==
 						  DIMEN_ELEMENT
-						? GFC_CAF_ARR_REF_SINGLE
-						: GFC_CAF_ARR_REF_RANGE);
+						  ? GFC_CAF_ARR_REF_SINGLE
+						  : GFC_CAF_ARR_REF_RANGE);
 		    }
 		  else if (end == NULL_TREE)
 		    mode_rhs = build_int_cst (unsigned_char_type_node,
-					      GFC_CAF_ARR_REF_EXP_FULL);
+					      GFC_CAF_ARR_REF_FULL);
 		  else
 		    mode_rhs = build_int_cst (unsigned_char_type_node,
 					      GFC_CAF_ARR_REF_OPEN_START);
@@ -1481,17 +1482,22 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 //		    se->loop->to[n] =
 //			gfc_conv_descriptor_ubound_get (argse.expr, gfc_rank_cst[n]);
 //		  }
-	      gfc_trans_create_temp_array (&se->pre, &se->post, se->ss, type,
-					   NULL_TREE, false, false, false,
-					   &array_expr->where);
+	      may_realloc = gfc_trans_create_temp_array (&se->pre, &se->post,
+							 se->ss, type,
+							 NULL_TREE, false,
+							 false, false,
+							 &array_expr->where)
+		  == NULL_TREE;
 	      res_var = se->ss->info->data.array.descriptor;
 	      dst_var = gfc_build_addr_expr (NULL_TREE, res_var);
-	      may_realloc = false;
-	      tmp = gfc_conv_descriptor_data_get (res_var);
-	      tmp = gfc_deallocate_with_status (tmp, NULL_TREE, NULL_TREE,
-						NULL_TREE, NULL_TREE, true,
-						NULL, false);
-	      gfc_add_expr_to_block (&se->post, tmp);
+	      if (may_realloc)
+		{
+		  tmp = gfc_conv_descriptor_data_get (res_var);
+		  tmp = gfc_deallocate_with_status (tmp, NULL_TREE, NULL_TREE,
+						    NULL_TREE, NULL_TREE, true,
+						    NULL, false);
+		  gfc_add_expr_to_block (&se->post, tmp);
+		}
 	    }
 	}
 
@@ -1740,7 +1746,7 @@ conv_caf_send (gfc_code *code) {
 
   /* Special case: RHS is a coarray but LHS is not; this code path avoids a
      temporary and a loop.  */
-  if (!gfc_is_coindexed (lhs_expr))
+  if (!gfc_is_coindexed (lhs_expr) && !lhs_caf_attr.codimension)
     {
       bool lhs_may_realloc = lhs_expr->rank > 0 && lhs_caf_attr.allocatable;
       gcc_assert (gfc_is_coindexed (rhs_expr));
@@ -1850,7 +1856,7 @@ conv_caf_send (gfc_code *code) {
   else
     stat = null_pointer_node;
 
-  if (!gfc_is_coindexed (rhs_expr))
+  if (!gfc_is_coindexed (rhs_expr) && !rhs_caf_attr.codimension)
     {
       if (lhs_caf_attr.alloc_comp)
 	{

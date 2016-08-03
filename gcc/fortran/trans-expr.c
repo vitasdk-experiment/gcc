@@ -2046,6 +2046,12 @@ gfc_caf_get_image_index (stmtblock_t *block, gfc_expr *e, tree desc)
       break;
   gcc_assert (ref != NULL);
 
+  if (ref->u.ar.dimen_type[0] == DIMEN_THIS_IMAGE)
+    {
+      return build_call_expr_loc (input_location, gfor_fndecl_caf_this_image, 1,
+				  integer_zero_node);
+    }
+
   img_idx = integer_zero_node;
   extent = integer_one_node;
   if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (desc)))
@@ -9301,6 +9307,7 @@ gfc_trans_assignment_1 (gfc_expr * expr1, gfc_expr * expr2, bool init_flag,
   tree string_length;
   int n;
   bool maybe_workshare = false;
+  symbol_attribute lhs_caf_attr, rhs_caf_attr;
 
   /* Assignment of the form lhs = rhs.  */
   gfc_start_block (&block);
@@ -9320,6 +9327,9 @@ gfc_trans_assignment_1 (gfc_expr * expr1, gfc_expr * expr2, bool init_flag,
       && (gfc_is_alloc_class_array_function (expr2)
 	  || gfc_is_alloc_class_scalar_function (expr2)))
     expr2->must_finalize = 1;
+
+  lhs_caf_attr = gfc_caf_attr (expr1);
+  rhs_caf_attr = gfc_caf_attr (expr2);
 
   if (lss != gfc_ss_terminator)
     {
@@ -9499,10 +9509,24 @@ gfc_trans_assignment_1 (gfc_expr * expr1, gfc_expr * expr2, bool init_flag,
 	gfc_add_block_to_block (&loop.post, &rse.post);
     }
 
-  tmp = gfc_trans_scalar_assign (&lse, &rse, expr1->ts,
-				 gfc_expr_is_variable (expr2) || scalar_to_array
-				 || expr2->expr_type == EXPR_ARRAY,
-				 !(l_is_temp || init_flag) && dealloc);
+  if (lhs_caf_attr.codimension && rhs_caf_attr.codimension
+      && lhs_caf_attr.alloc_comp && rhs_caf_attr.alloc_comp)
+    {
+      gfc_code code;
+      gfc_actual_arglist a1, a2;
+      a1.expr = expr1;
+      a1.next = &a2;
+      a2.expr = expr2;
+      a2.next = NULL;
+      code.ext.actual = &a1;
+      code.resolved_isym = gfc_intrinsic_subroutine_by_id (GFC_ISYM_CAF_SEND);
+      tmp = gfc_conv_intrinsic_subroutine (&code);
+    }
+  else
+    tmp = gfc_trans_scalar_assign (&lse, &rse, expr1->ts,
+				   gfc_expr_is_variable (expr2) || scalar_to_array
+				   || expr2->expr_type == EXPR_ARRAY,
+				   !(l_is_temp || init_flag) && dealloc);
   gfc_add_expr_to_block (&body, tmp);
 
   if (lss == gfc_ss_terminator)

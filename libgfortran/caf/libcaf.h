@@ -105,12 +105,8 @@ typedef enum caf_array_ref_t {
   /* Reference array elements given by a vector.  Only for this mode
      caf_reference_t.u.a.dim[i].v is valid.  */
   CAF_ARR_REF_VECTOR,
-  /* A full array ref where the full array ref (:) is *not* given in the
-     source code, meaning reallocation allowed.  */
-  CAF_ARR_REF_IMP_FULL,
-  /* A full array ref with the (:) explicitly given in the source code.
-     I.e. no reallocation allowed.  */
-  CAF_ARR_REF_EXP_FULL,
+  /* A full array ref (:).  */
+  CAF_ARR_REF_FULL,
   /* Reference a range on elements given by start, end and stride.  */
   CAF_ARR_REF_RANGE,
   /* Only a single item is referenced given in the start member.  */
@@ -216,7 +212,7 @@ void _gfortran_caf_get_by_ref (caf_token_t token, int image_idx,
 void _gfortran_caf_send_by_ref (caf_token_t token, int image_index,
 	gfc_descriptor_t *src, caf_reference_t *refs, int dst_kind,
 	int src_kind, bool may_require_tmp, bool dst_reallocatable, int *stat);
-void _gfortran_caf_sendget_by_refs (
+void _gfortran_caf_sendget_by_ref (
 	caf_token_t dst_token, int dst_image_index, caf_reference_t *dst_refs,
 	caf_token_t src_token, int src_image_index, caf_reference_t *src_refs,
 	int dst_kind, int src_kind, bool may_require_tmp, int *stat);
