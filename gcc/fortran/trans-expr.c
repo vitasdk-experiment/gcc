@@ -1862,9 +1862,13 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 	  break;
       if (ref == NULL)
 	ref = expr->ref;
+      /* Skip to the coref including the coref and only that.  */
       for ( ; ref; ref = ref->next)
-	if (ref->type == REF_ARRAY && ref->u.ar.dimen)
-	  break;
+	if (ref->type == REF_ARRAY && ref->u.ar.codimen)
+	  {
+	    ref = ref->next;
+	    break;
+	  }
       for ( ; ref; ref = ref->next)
 	if (ref->type == REF_COMPONENT && !allocatable)
 	  {
@@ -1873,7 +1877,7 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 	    else
 	      gfc_error ("Sorry, coindexed access at %L to a scalar "
 			 "with a non-allocatable component with an array "
-			 "partref is not yet supported",
+			 "part-ref is not yet supported",
 			 &expr->where);
 	  }
     }
