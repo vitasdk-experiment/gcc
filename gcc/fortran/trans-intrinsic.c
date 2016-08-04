@@ -1178,7 +1178,10 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 
 		   while (comp != ref->u.c.component)
 		     {
-		       ++comp_idx;
+		       if (comp->attr.allocatable || comp->attr.pointer)
+			 /* Increment the component index for allocatable or pointer
+			    components only.  */
+			 ++comp_idx;
 		       comp = comp->next;
 		     }
 		   if (comp != NULL)

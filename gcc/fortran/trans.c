@@ -869,7 +869,7 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size, tree nelems,
 		         == ISOFORTRAN_EVENT_TYPE;
       int sub_comp_num, comp_idx;
       tree sub_comp_tree;
-      comp_idx = gfc_get_alloc_ptr_comps_idx(expr, &caf_attr, &sub_comp_num);
+      comp_idx = gfc_get_alloc_ptr_comps_idx (expr, &caf_attr, &sub_comp_num);
       if (nelems != NULL_TREE && sub_comp_num != 0)
 	sub_comp_tree = fold_build2_loc (input_location, MULT_EXPR,
 					 integer_type_node, nelems,

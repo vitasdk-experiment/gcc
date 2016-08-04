@@ -5039,7 +5039,10 @@ gfc_get_alloc_ptr_comps_idx (gfc_expr *expr, symbol_attribute *attr,
 
       while (comp != comp_ref->u.c.component)
 	{
-	  ++idx;
+	  if (comp->attr.allocatable || comp->attr.pointer)
+	    /* Increment the component index for allocatable or pointer
+	       components only.  */
+	    ++idx;
 	  comp = comp->next;
 	}
       if (comp != NULL)
