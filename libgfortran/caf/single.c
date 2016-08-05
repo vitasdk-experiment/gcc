@@ -1798,6 +1798,7 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 		  GFC_DESCRIPTOR_DATA (dst) = NULL;
 		  GFC_DESCRIPTOR_DTYPE (dst) =
 		      GFC_DESCRIPTOR_DTYPE (src);
+		  dst_size = GFC_DESCRIPTOR_SIZE (dst);
 		  /* The component may be allocated now, because it is a
 				 scalar.  */
 		  _gfortran_caf_register_component (single_token,

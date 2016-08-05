@@ -2393,7 +2393,7 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
     gfc_internal_error ("gfc_caf_attr(): Expression isn't a variable");
 
   sym = expr->symtree->n.sym;
-  attr = sym->attr;
+  gfc_clear_attr (&attr);
 
   if (sym->ts.type == BT_CLASS && sym->attr.class_ok)
     {
@@ -2406,11 +2406,11 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
     }
   else
     {
-      dimension = attr.dimension;
-      codimension = attr.codimension;
-      pointer = attr.pointer;
-      allocatable = attr.allocatable;
-      coarray_comp = attr.coarray_comp;
+      dimension = sym->attr.dimension;
+      codimension = sym->attr.codimension;
+      pointer = sym->attr.pointer;
+      allocatable = sym->attr.allocatable;
+      coarray_comp = sym->attr.coarray_comp;
       alloc_comp = sym->ts.type == BT_DERIVED ?
 	    sym->ts.u.derived->attr.alloc_comp : 0;
     }
@@ -2434,7 +2434,7 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
 	  case AR_ELEMENT:
 	    /* Handle coarrays.  */
 	    if (ref->u.ar.dimen > 0 && !in_allocate)
-	      allocatable = pointer = alloc_comp = 0;
+	      allocatable = pointer = 0;
 	    break;
 
 	  case AR_UNKNOWN:
@@ -2450,24 +2450,22 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
 
       case REF_COMPONENT:
 	comp = ref->u.c.component;
-	attr = comp->attr;
 
 	if (comp->ts.type == BT_CLASS)
 	  {
 	    codimension |= CLASS_DATA (comp)->attr.codimension;
 	    pointer = CLASS_DATA (comp)->attr.class_pointer;
 	    allocatable = CLASS_DATA (comp)->attr.allocatable;
-	    coarray_comp = CLASS_DATA (comp)->attr.coarray_comp;
+	    coarray_comp |= CLASS_DATA (comp)->attr.coarray_comp;
 	  }
 	else
 	  {
 	    codimension |= comp->attr.codimension;
 	    pointer = comp->attr.pointer;
 	    allocatable = comp->attr.allocatable;
-	    coarray_comp = comp->attr.coarray_comp;
+	    coarray_comp |= comp->attr.coarray_comp;
 	  }
 
-	alloc_comp |= allocatable | pointer;
 	if (pointer || attr.proc_pointer)
 	  target = 1;
 

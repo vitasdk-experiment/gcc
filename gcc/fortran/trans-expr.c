@@ -1874,25 +1874,32 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 	  {
 	    if (ref->u.c.component->attr.allocatable)
 	      allocatable = true;
-	    else
-	      gfc_error ("Sorry, coindexed access at %L to a scalar "
-			 "with a non-allocatable component with an array "
-			 "part-ref is not yet supported",
-			 &expr->where);
+//	    else
+//	      gfc_error ("Sorry, coindexed access at %L to a scalar "
+//			 "with a non-allocatable component with an array "
+//			 "part-ref is not yet supported",
+//			 &expr->where);
 	  }
     }
 
   caf_decl = expr->symtree->n.sym->backend_decl;
   gcc_assert (caf_decl);
-  if (expr->symtree->n.sym->ts.type == BT_CLASS
-      && expr->symtree->n.sym->attr.codimension)
-    caf_decl = gfc_class_data_get (caf_decl);
+  if (expr->symtree->n.sym->ts.type == BT_CLASS)
+    for (ref = expr->ref; ref; ref = ref->next)
+      {
+	if (ref->type == REF_COMPONENT
+	    && strcmp (ref->u.c.component->name, "_data") != 0)
+	  {
+	    caf_decl = gfc_class_data_get (caf_decl);
+	    if (CLASS_DATA (expr->symtree->n.sym)->attr.codimension)
+	      return caf_decl;
+	    break;
+	  }
+	else if (ref->type == REF_ARRAY && ref->u.ar.dimen)
+	  break;
+      }
   if (expr->symtree->n.sym->attr.codimension)
     return caf_decl;
-
-  if (expr->symtree->n.sym->ts.type == BT_CLASS
-      && !GFC_CLASS_TYPE_P (TREE_TYPE (caf_decl)))
-    caf_decl = gfc_class_data_get (caf_decl);
 
   /* The following code assumes that the coarray is a component reachable via
      only scalar components/variables; the Fortran standard guarantees this.  */
@@ -1908,7 +1915,14 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 				    TREE_TYPE (comp->backend_decl), caf_decl,
 				    comp->backend_decl, NULL_TREE);
 	if (comp->ts.type == BT_CLASS)
-	  caf_decl = gfc_class_data_get (caf_decl);
+	  {
+	    caf_decl = gfc_class_data_get (caf_decl);
+	    if (CLASS_DATA (comp)->attr.codimension)
+	      {
+		found = true;
+		break;
+	      }
+	  }
 	if (comp->attr.codimension)
 	  {
 	    found = true;
@@ -2050,7 +2064,7 @@ gfc_caf_get_image_index (stmtblock_t *block, gfc_expr *e, tree desc)
       break;
   gcc_assert (ref != NULL);
 
-  if (ref->u.ar.dimen_type[0] == DIMEN_THIS_IMAGE)
+  if (ref->u.ar.dimen_type[ref->u.ar.dimen] == DIMEN_THIS_IMAGE)
     {
       return build_call_expr_loc (input_location, gfor_fndecl_caf_this_image, 1,
 				  integer_zero_node);

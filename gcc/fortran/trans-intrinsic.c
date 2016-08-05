@@ -1163,20 +1163,20 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 	     taken into account.  When the bit_offset in the field_decl is non-
 	     null, divide it by the bitsize_unit and add it to the regular
 	     offset.  */
-	  if (ref->u.c.component->backend_decl->field_decl.bit_offset
+	  if (DECL_FIELD_BIT_OFFSET (ref->u.c.component->backend_decl)
 	      != NULL_TREE
-	      && !integer_zerop (ref->u.c.component->backend_decl
-				 ->field_decl.bit_offset))
+	      && !integer_zerop (
+		DECL_FIELD_BIT_OFFSET (ref->u.c.component->backend_decl)))
 	    {
 	      tmp2 = fold_build2 (TRUNC_DIV_EXPR, TREE_TYPE (tmp),
-			ref->u.c.component->backend_decl->field_decl.bit_offset,
+		       DECL_FIELD_BIT_OFFSET (ref->u.c.component->backend_decl),
 				  bitsize_unit_node);
 	      tmp2 = fold_build2 (PLUS_EXPR, TREE_TYPE (tmp),
-			    ref->u.c.component->backend_decl->field_decl.offset,
+			   DECL_FIELD_OFFSET (ref->u.c.component->backend_decl),
 				  tmp2);
 	    }
 	  else
-	    tmp2 = ref->u.c.component->backend_decl->field_decl.offset;
+	    tmp2 = DECL_FIELD_OFFSET (ref->u.c.component->backend_decl);
 	  gfc_add_modify (block, tmp, fold_convert (TREE_TYPE (tmp), tmp2));
 
 	  /* Set idx.  */
@@ -1193,7 +1193,7 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 		 {
 		   comp = derived->components;
 
-		   while (comp != ref->u.c.component)
+		   while (comp && comp != ref->u.c.component)
 		     {
 		       if (comp->attr.allocatable || comp->attr.pointer)
 			 /* Increment the component index for allocatable or pointer
@@ -1424,21 +1424,23 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
       gfc_add_modify (block, tmp, fold_convert (TREE_TYPE (field),
 						  null_pointer_node));
     }
-  return gfc_build_addr_expr (NULL_TREE, caf_ref);
+  return caf_ref != NULL_TREE ? gfc_build_addr_expr (NULL_TREE, caf_ref)
+			      : NULL_TREE;
 }
 
 /* Get data from a remote coarray.  */
 
 static void
 gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
-			    tree may_require_tmp, bool may_realloc)
+			    tree may_require_tmp, bool may_realloc,
+			    symbol_attribute *caf_attr)
 {
   gfc_expr *array_expr, *tmp_stat;
   gfc_se argse;
   tree caf_decl, token, offset, image_index, tmp;
   tree res_var, dst_var, type, kind, vec, stat;
   tree caf_reference;
-  symbol_attribute caf_attr;
+  symbol_attribute caf_attr_store;
 
   gcc_assert (flag_coarray == GFC_FCOARRAY_LIB);
 
@@ -1453,7 +1455,11 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   array_expr = (lhs == NULL_TREE) ? expr->value.function.actual->expr : expr;
   type = gfc_typenode_for_spec (&array_expr->ts);
 
-  caf_attr = gfc_caf_attr (array_expr);
+  if (caf_attr == NULL)
+    {
+      caf_attr_store = gfc_caf_attr (array_expr);
+      caf_attr = &caf_attr_store;
+    }
 
   res_var = lhs;
   dst_var = lhs;
@@ -1473,96 +1479,99 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   else
     stat = null_pointer_node;
 
-  if (caf_attr.alloc_comp)
+  if (caf_attr->alloc_comp)
     {
       /* Get using caf_get_by_ref.  */
-      if (lhs == NULL_TREE)
-	{
-	  if (array_expr->rank == 0)
-	    {
-	      symbol_attribute attr;
-	      gfc_clear_attr (&attr);
-	      if (array_expr->ts.type == BT_CHARACTER)
-		res_var = gfc_conv_string_tmp (se, build_pointer_type (type),
-					       array_expr->ts.u.cl->backend_decl);
-	      //					   argse.string_length);
-	      else
-		res_var = gfc_create_var (type, "caf_res");
-	      dst_var = gfc_conv_scalar_to_descriptor (se, res_var, attr);
-	      dst_var = gfc_build_addr_expr (NULL_TREE, dst_var);
-	    }
-	  else
-	    {
-	      /* Create temporary.  */
-//	      for (int n = 0; n < se->ss->loop->dimen; n++)
-//		if (se->loop->to[n] == NULL_TREE)
-//		  {
-//		    se->loop->from[n] =
-//			gfc_conv_descriptor_lbound_get (argse.expr, gfc_rank_cst[n]);
-//		    se->loop->to[n] =
-//			gfc_conv_descriptor_ubound_get (argse.expr, gfc_rank_cst[n]);
-//		  }
-	      may_realloc = gfc_trans_create_temp_array (&se->pre, &se->post,
-							 se->ss, type,
-							 NULL_TREE, false,
-							 false, false,
-							 &array_expr->where)
-		  == NULL_TREE;
-	      res_var = se->ss->info->data.array.descriptor;
-	      dst_var = gfc_build_addr_expr (NULL_TREE, res_var);
-	      if (may_realloc)
-		{
-		  tmp = gfc_conv_descriptor_data_get (res_var);
-		  tmp = gfc_deallocate_with_status (tmp, NULL_TREE, NULL_TREE,
-						    NULL_TREE, NULL_TREE, true,
-						    NULL, false);
-		  gfc_add_expr_to_block (&se->post, tmp);
-		}
-	    }
-	}
-
-      kind = build_int_cst (integer_type_node, expr->ts.kind);
-      if (lhs_kind == NULL_TREE)
-	lhs_kind = kind;
-
-      caf_decl = gfc_get_tree_for_caf_expr (array_expr);
-      if (TREE_CODE (TREE_TYPE (caf_decl)) == REFERENCE_TYPE)
-	caf_decl = build_fold_indirect_ref_loc (input_location, caf_decl);
-      image_index = gfc_caf_get_image_index (&se->pre, array_expr, caf_decl);
-      gfc_get_caf_token_offset (se, &token, NULL, caf_decl, NULL,
-				array_expr);
-
-      /* No overlap possible as we have generated a temporary.  */
-      if (lhs == NULL_TREE)
-	may_require_tmp = boolean_false_node;
-
       caf_reference = conv_expr_ref_to_caf_ref (&se->pre, array_expr);
 
-      /* It guarantees memory consistency within the same segment */
-      tmp = gfc_build_string_const (strlen ("memory") + 1, "memory"),
-      tmp = build5_loc (input_location, ASM_EXPR, void_type_node,
-			gfc_build_string_const (1, ""), NULL_TREE, NULL_TREE,
-			tree_cons (NULL_TREE, tmp, NULL_TREE), NULL_TREE);
-      ASM_VOLATILE_P (tmp) = 1;
-      gfc_add_expr_to_block (&se->pre, tmp);
+      if (caf_reference != NULL_TREE)
+	{
+	  if (lhs == NULL_TREE)
+	    {
+	      if (array_expr->rank == 0)
+		{
+		  symbol_attribute attr;
+		  gfc_clear_attr (&attr);
+		  if (array_expr->ts.type == BT_CHARACTER)
+		    res_var = gfc_conv_string_tmp (se, build_pointer_type (type),
+						   array_expr->ts.u.cl->backend_decl);
+		  //					   argse.string_length);
+		  else
+		    res_var = gfc_create_var (type, "caf_res");
+		  dst_var = gfc_conv_scalar_to_descriptor (se, res_var, attr);
+		  dst_var = gfc_build_addr_expr (NULL_TREE, dst_var);
+		}
+	      else
+		{
+		  /* Create temporary.  */
+		  //	      for (int n = 0; n < se->ss->loop->dimen; n++)
+		  //		if (se->loop->to[n] == NULL_TREE)
+		  //		  {
+		  //		    se->loop->from[n] =
+		  //			gfc_conv_descriptor_lbound_get (argse.expr, gfc_rank_cst[n]);
+		  //		    se->loop->to[n] =
+		  //			gfc_conv_descriptor_ubound_get (argse.expr, gfc_rank_cst[n]);
+		  //		  }
+		  may_realloc = gfc_trans_create_temp_array (&se->pre, &se->post,
+							     se->ss, type,
+							     NULL_TREE, false,
+							     false, false,
+							     &array_expr->where)
+		      == NULL_TREE;
+		  res_var = se->ss->info->data.array.descriptor;
+		  dst_var = gfc_build_addr_expr (NULL_TREE, res_var);
+		  if (may_realloc)
+		    {
+		      tmp = gfc_conv_descriptor_data_get (res_var);
+		      tmp = gfc_deallocate_with_status (tmp, NULL_TREE, NULL_TREE,
+							NULL_TREE, NULL_TREE, true,
+							NULL, false);
+		      gfc_add_expr_to_block (&se->post, tmp);
+		    }
+		}
+	    }
 
-      tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get_by_ref, 9,
-				 token, image_index, dst_var, caf_reference,
-				 lhs_kind, kind, may_require_tmp,
-				 may_realloc ? boolean_true_node :
-					       boolean_false_node,
-				 stat);
+	  kind = build_int_cst (integer_type_node, expr->ts.kind);
+	  if (lhs_kind == NULL_TREE)
+	    lhs_kind = kind;
 
-      gfc_add_expr_to_block (&se->pre, tmp);
+	  caf_decl = gfc_get_tree_for_caf_expr (array_expr);
+	  if (TREE_CODE (TREE_TYPE (caf_decl)) == REFERENCE_TYPE)
+	    caf_decl = build_fold_indirect_ref_loc (input_location, caf_decl);
+	  image_index = gfc_caf_get_image_index (&se->pre, array_expr, caf_decl);
+	  gfc_get_caf_token_offset (se, &token, NULL, caf_decl, NULL,
+				    array_expr);
 
-      if (se->ss)
-	gfc_advance_se_ss_chain (se);
+	  /* No overlap possible as we have generated a temporary.  */
+	  if (lhs == NULL_TREE)
+	    may_require_tmp = boolean_false_node;
 
-      se->expr = res_var;
-      if (array_expr->ts.type == BT_CHARACTER)
-	se->string_length = argse.string_length;
+          /* It guarantees memory consistency within the same segment */
+	  tmp = gfc_build_string_const (strlen ("memory") + 1, "memory");
+	  tmp = build5_loc (input_location, ASM_EXPR, void_type_node,
+			    gfc_build_string_const (1, ""), NULL_TREE, NULL_TREE,
+			    tree_cons (NULL_TREE, tmp, NULL_TREE), NULL_TREE);
+	  ASM_VOLATILE_P (tmp) = 1;
+	  gfc_add_expr_to_block (&se->pre, tmp);
 
-      return;
+	  tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_get_by_ref, 9,
+				     token, image_index, dst_var, caf_reference,
+				     lhs_kind, kind, may_require_tmp,
+				     may_realloc ? boolean_true_node :
+						   boolean_false_node,
+				     stat);
+
+	  gfc_add_expr_to_block (&se->pre, tmp);
+
+	  if (se->ss)
+	    gfc_advance_se_ss_chain (se);
+
+	  se->expr = res_var;
+	  if (array_expr->ts.type == BT_CHARACTER)
+	    se->string_length = argse.string_length;
+
+	  return;
+	}
     }
 
   gfc_init_se (&argse, NULL);
@@ -1655,7 +1664,7 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
     may_require_tmp = boolean_false_node;
 
   /* It guarantees memory consistency within the same segment */
-  tmp = gfc_build_string_const (strlen ("memory") + 1, "memory"),
+  tmp = gfc_build_string_const (strlen ("memory") + 1, "memory");
   tmp = build5_loc (input_location, ASM_EXPR, void_type_node,
 		    gfc_build_string_const (1, ""), NULL_TREE, NULL_TREE,
 		    tree_cons (NULL_TREE, tmp, NULL_TREE), NULL_TREE);
@@ -1762,7 +1771,6 @@ conv_caf_send (gfc_code *code) {
     }
 
   lhs_kind = build_int_cst (integer_type_node, lhs_expr->ts.kind);
-  gfc_add_block_to_block (&block, &lhs_se.pre);
 
   /* Special case: RHS is a coarray but LHS is not; this code path avoids a
      temporary and a loop.  */
@@ -1771,16 +1779,39 @@ conv_caf_send (gfc_code *code) {
       bool lhs_may_realloc = lhs_expr->rank > 0 && lhs_caf_attr.allocatable;
       gcc_assert (gfc_is_coindexed (rhs_expr));
       gfc_init_se (&rhs_se, NULL);
+      if (lhs_expr->rank == 0 && gfc_expr_attr (lhs_expr).allocatable)
+	{
+	  gfc_se scal_se;
+	  gfc_init_se (&scal_se, NULL);
+	  scal_se.want_pointer = 1;
+	  gfc_conv_expr (&scal_se, lhs_expr);
+	  /* Ensure scalar on lhs is allocated.  */
+	  gfc_add_block_to_block (&block, &scal_se.pre);
+
+	  gfc_allocate_using_malloc (&scal_se.pre, scal_se.expr,
+				    TYPE_SIZE_UNIT (
+				       gfc_typenode_for_spec (&lhs_expr->ts)),
+				    NULL_TREE);
+	  tmp = fold_build2 (EQ_EXPR, boolean_type_node, scal_se.expr,
+			     null_pointer_node);
+	  tmp = fold_build3_loc (input_location, COND_EXPR, void_type_node,
+				 tmp, gfc_finish_block (&scal_se.pre),
+				 build_empty_stmt (input_location));
+	  gfc_add_expr_to_block (&block, tmp);
+	}
+      gfc_add_block_to_block (&block, &lhs_se.pre);
       gfc_conv_intrinsic_caf_get (&rhs_se, rhs_expr, lhs_se.expr, lhs_kind,
-				  may_require_tmp, lhs_may_realloc);
+				  may_require_tmp, lhs_may_realloc,
+				  &lhs_caf_attr);
       gfc_add_block_to_block (&block, &rhs_se.pre);
       gfc_add_block_to_block (&block, &rhs_se.post);
       gfc_add_block_to_block (&block, &lhs_se.post);
       return gfc_finish_block (&block);
     }
 
-  /* Obtain token, offset and image index for the LHS.  */
+  gfc_add_block_to_block (&block, &lhs_se.pre);
 
+  /* Obtain token, offset and image index for the LHS.  */
   caf_decl = gfc_get_tree_for_caf_expr (lhs_expr);
   if (TREE_CODE (TREE_TYPE (caf_decl)) == REFERENCE_TYPE)
     caf_decl = build_fold_indirect_ref_loc (input_location, caf_decl);
@@ -1900,7 +1931,7 @@ conv_caf_send (gfc_code *code) {
       tree rhs_token, rhs_offset, rhs_image_index;
 
       /* It guarantees memory consistency within the same segment */
-      tmp = gfc_build_string_const (strlen ("memory") + 1, "memory"),
+      tmp = gfc_build_string_const (strlen ("memory") + 1, "memory");
       tmp = build5_loc (input_location, ASM_EXPR, void_type_node,
 			  gfc_build_string_const (1, ""), NULL_TREE, NULL_TREE,
 			  tree_cons (NULL_TREE, tmp, NULL_TREE), NULL_TREE);
@@ -1941,7 +1972,7 @@ conv_caf_send (gfc_code *code) {
   gfc_add_block_to_block (&block, &rhs_se.post);
 
   /* It guarantees memory consistency within the same segment */
-  tmp = gfc_build_string_const (strlen ("memory") + 1, "memory"),
+  tmp = gfc_build_string_const (strlen ("memory") + 1, "memory");
   tmp = build5_loc (input_location, ASM_EXPR, void_type_node,
 		    gfc_build_string_const (1, ""), NULL_TREE, NULL_TREE,
 		    tree_cons (NULL_TREE, tmp, NULL_TREE), NULL_TREE);
@@ -8466,7 +8497,7 @@ gfc_conv_intrinsic_function (gfc_se * se, gfc_expr * expr)
 
     case GFC_ISYM_CAF_GET:
       gfc_conv_intrinsic_caf_get (se, expr, NULL_TREE, NULL_TREE, NULL_TREE,
-				  false);
+				  false, NULL);
       break;
 
     case GFC_ISYM_CMPLX:
