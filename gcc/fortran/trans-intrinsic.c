@@ -1159,7 +1159,24 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 	  tmp = fold_build3_loc (input_location, COMPONENT_REF,
 				 TREE_TYPE (field), inner_struct, field,
 				 NULL_TREE);
-	  tmp2 = ref->u.c.component->backend_decl->field_decl.offset;
+	  /* Computing the offset is somewhat harder.  The bit_offset has to be
+	     taken into account.  When the bit_offset in the field_decl is non-
+	     null, divide it by the bitsize_unit and add it to the regular
+	     offset.  */
+	  if (ref->u.c.component->backend_decl->field_decl.bit_offset
+	      != NULL_TREE
+	      && !integer_zerop (ref->u.c.component->backend_decl
+				 ->field_decl.bit_offset))
+	    {
+	      tmp2 = fold_build2 (TRUNC_DIV_EXPR, TREE_TYPE (tmp),
+			ref->u.c.component->backend_decl->field_decl.bit_offset,
+				  bitsize_unit_node);
+	      tmp2 = fold_build2 (PLUS_EXPR, TREE_TYPE (tmp),
+			    ref->u.c.component->backend_decl->field_decl.offset,
+				  tmp2);
+	    }
+	  else
+	    tmp2 = ref->u.c.component->backend_decl->field_decl.offset;
 	  gfc_add_modify (block, tmp, fold_convert (TREE_TYPE (tmp), tmp2));
 
 	  /* Set idx.  */
