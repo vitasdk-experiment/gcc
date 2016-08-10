@@ -2518,11 +2518,13 @@ gfc_caf_attr (gfc_expr *e, bool in_allocate)
 	      attr.dimension = CLASS_DATA (sym)->attr.dimension;
 	      attr.pointer = CLASS_DATA (sym)->attr.class_pointer;
 	      attr.allocatable = CLASS_DATA (sym)->attr.allocatable;
-	      attr.alloc_comp = attr.allocatable;
+	      attr.alloc_comp = CLASS_DATA (sym)->ts.u.derived->attr.alloc_comp;
 	    }
 	}
-      else
+      else if (e->symtree)
 	attr = caf_variable_attr (e, in_allocate);
+      else
+	gfc_clear_attr (&attr);
 
       /* TODO: NULL() returns pointers.  May have to take care of this
 	 here.  */

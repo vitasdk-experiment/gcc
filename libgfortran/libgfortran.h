@@ -401,6 +401,8 @@ typedef GFC_ARRAY_DESCRIPTOR (GFC_MAX_DIMENSIONS, GFC_LOGICAL_16) gfc_array_l16;
 #define GFC_DESCRIPTOR_STRIDE(desc,i) ((desc)->dim[i]._stride)
 #define GFC_DESCRIPTOR_STRIDE_BYTES(desc,i) \
   (GFC_DESCRIPTOR_STRIDE(desc,i) * GFC_DESCRIPTOR_SIZE(desc))
+#define GFC_DESCRIPTOR_CAF_TOKEN(desc) ((void *)(&(desc)->dim) \
+  + GFC_DESCRIPTOR_RANK (desc) * sizeof(descriptor_dimension))
 
 /* Macros to get both the size and the type with a single masking operation  */
 

@@ -2758,7 +2758,7 @@ int gfc_validate_kind (bt, int, bool);
 int gfc_get_int_kind_from_width_isofortranenv (int size);
 int gfc_get_real_kind_from_width_isofortranenv (int size);
 tree gfc_get_union_type (gfc_symbol *);
-tree gfc_get_derived_type (gfc_symbol * derived);
+tree gfc_get_derived_type (gfc_symbol * derived, bool in_coarray = false);
 extern int gfc_index_integer_kind;
 extern int gfc_default_integer_kind;
 extern int gfc_max_integer_kind;

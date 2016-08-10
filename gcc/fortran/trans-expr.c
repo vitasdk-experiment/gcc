@@ -72,6 +72,13 @@ gfc_conv_scalar_to_descriptor (gfc_se *se, tree scalar, symbol_attribute attr)
   desc = gfc_create_var (type, "desc");
   DECL_ARTIFICIAL (desc) = 1;
 
+  if (CONSTANT_CLASS_P (scalar))
+    {
+      tree tmp;
+      tmp = gfc_create_var (TREE_TYPE (scalar), "scalar");
+      gfc_add_modify (&se->pre, tmp, scalar);
+      scalar = tmp;
+    }
   if (!POINTER_TYPE_P (TREE_TYPE (scalar)))
     scalar = gfc_build_addr_expr (NULL_TREE, scalar);
   gfc_add_modify (&se->pre, gfc_conv_descriptor_dtype (desc),
@@ -1812,8 +1819,8 @@ tree
 gfc_get_tree_for_caf_expr (gfc_expr *expr)
 {
   tree caf_decl;
-  bool found = false, allocatable = false;
-  gfc_ref *ref; //, *comp_ref = NULL;
+  bool found = false;
+  gfc_ref *ref;
 
   gcc_assert (expr && expr->expr_type == EXPR_VARIABLE);
 
@@ -1870,15 +1877,15 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
 	    break;
 	  }
       for ( ; ref; ref = ref->next)
-	if (ref->type == REF_COMPONENT && !allocatable)
+	if (ref->type == REF_COMPONENT)
 	  {
 	    if (ref->u.c.component->attr.allocatable)
-	      allocatable = true;
-//	    else
-//	      gfc_error ("Sorry, coindexed access at %L to a scalar "
-//			 "with a non-allocatable component with an array "
-//			 "part-ref is not yet supported",
-//			 &expr->where);
+	      break;
+	    else
+	      gfc_error ("Sorry, coindexed access at %L to "
+			 "a non-allocatable component with an array "
+			 "part-ref is not yet supported",
+			 &expr->where);
 	  }
     }
 
@@ -9527,7 +9534,8 @@ gfc_trans_assignment_1 (gfc_expr * expr1, gfc_expr * expr2, bool init_flag,
 	gfc_add_block_to_block (&loop.post, &rse.post);
     }
 
-  if (lhs_caf_attr.codimension && rhs_caf_attr.codimension
+  if (flag_coarray == GFC_FCOARRAY_LIB
+      && lhs_caf_attr.codimension && rhs_caf_attr.codimension
       && lhs_caf_attr.alloc_comp && rhs_caf_attr.alloc_comp)
     {
       gfc_code code;
