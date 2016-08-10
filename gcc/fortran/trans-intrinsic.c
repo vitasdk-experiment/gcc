@@ -1104,6 +1104,8 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
   gfc_se se;
   int i;
 
+  /* Prevent uninit-warning.  */
+  reference_type = NULL_TREE;
   last_type = gfc_typenode_for_spec (&expr->symtree->n.sym->ts);
   while (ref)
     {
