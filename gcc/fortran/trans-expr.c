@@ -95,6 +95,55 @@ gfc_conv_scalar_to_descriptor (gfc_se *se, tree scalar, symbol_attribute attr)
 }
 
 
+/* Get the coarray token from the array or from the component.
+   Returns a NULL_TREE, when the ref object is not allocatable or pointer.  */
+
+tree
+gfc_get_alloc_ptr_comps_caf_token (gfc_se *outerse, gfc_expr *expr)
+{
+  gfc_symbol *sym = expr->symtree->n.sym;
+  bool is_coarray = sym->attr.codimension;
+  gfc_expr *caf_expr = gfc_copy_expr (expr);
+  gfc_ref *ref = caf_expr->ref;
+
+  while (ref)
+    {
+      if (ref->type == REF_COMPONENT
+	  && (ref->u.c.component->attr.allocatable
+	      || ref->u.c.component->attr.pointer)
+	  && (is_coarray || ref->u.c.component->attr.codimension))
+	{
+	  tree comp = ref->u.c.component->caf_token, caf;
+	  gfc_se se;
+	  bool comp_ref = !ref->u.c.component->attr.dimension;
+	  if (comp == NULL_TREE && comp_ref)
+	    return NULL_TREE;
+	  gfc_init_se (&se, outerse);
+	  gfc_free_ref_list (ref->next);
+	  ref->next = NULL;
+	  caf_expr->rank = comp_ref ? 0 : ref->u.c.component->as->rank;
+	  se.want_pointer = comp_ref;
+	  gfc_conv_expr (&se, caf_expr);
+	  gfc_add_block_to_block (&outerse->pre, &se.pre);
+
+	  if (TREE_CODE (se.expr) == COMPONENT_REF && comp_ref)
+	    se.expr = TREE_OPERAND (se.expr, 0);
+	  gfc_free_expr (caf_expr);
+
+	  if (comp_ref)
+	    caf = fold_build3_loc (input_location, COMPONENT_REF,
+				   TREE_TYPE (comp), se.expr, comp, NULL_TREE);
+	  else
+	    caf = gfc_conv_descriptor_token (se.expr);
+	  return gfc_build_addr_expr (NULL_TREE, caf);
+	}
+      ref = ref->next;
+    }
+
+  return NULL_TREE;
+}
+
+
 /* This is the seed for an eventual trans-class.c
 
    The following parameters should not be used directly since they might
@@ -9145,14 +9194,11 @@ alloc_scalar_allocatable_for_assignment (stmtblock_t *block,
       caf_decl = gfc_get_tree_for_caf_expr (expr1);
       gfc_get_caf_token_offset (&caf_se, &token, NULL, caf_decl, NULL_TREE,
 				NULL);
-      tmp = gfc_conv_scalar_to_descriptor (&caf_se, lse.expr, attr);
       gfc_add_block_to_block (block, &caf_se.pre);
-      gfc_allocate_allocatable (block, lse.expr, size_in_bytes, NULL_TREE,
+      gfc_allocate_allocatable (block, lse.expr, size_in_bytes,
 				gfc_build_addr_expr (NULL_TREE, token),
 				NULL_TREE, NULL_TREE, NULL_TREE, jump_label1,
-				expr1, 1, tmp);
-      gfc_add_modify (block, lse.expr, fold_convert (TREE_TYPE (lse.expr),
-					  gfc_conv_descriptor_data_get (tmp)));
+				expr1, 1);
     }
   else if (expr1->ts.type == BT_DERIVED && expr1->ts.u.derived->attr.alloc_comp)
     {

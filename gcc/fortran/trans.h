@@ -461,10 +461,10 @@ void gfc_conv_expr_lhs (gfc_se * se, gfc_expr * expr);
 void gfc_conv_expr_reference (gfc_se * se, gfc_expr *);
 void gfc_conv_expr_type (gfc_se * se, gfc_expr *, tree);
 
-tree gfc_conv_scalar_to_descriptor (gfc_se *, tree, symbol_attribute);
-
 
 /* trans-expr.c */
+tree gfc_conv_scalar_to_descriptor (gfc_se *, tree, symbol_attribute);
+tree gfc_get_alloc_ptr_comps_caf_token (gfc_se *, gfc_expr *);
 void gfc_conv_scalar_char_value (gfc_symbol *sym, gfc_se *se, gfc_expr **expr);
 tree gfc_string_to_single_character (tree len, tree str, int kind);
 tree gfc_get_tree_for_caf_expr (gfc_expr *);
@@ -680,8 +680,8 @@ tree gfc_call_malloc (stmtblock_t *, tree, tree);
 tree gfc_build_memcpy_call (tree, tree, tree);
 
 /* Allocate memory for allocatable variables, with optional status variable.  */
-void gfc_allocate_allocatable (stmtblock_t*, tree, tree, tree, tree, tree,
-			       tree, tree, tree, gfc_expr*, int, tree);
+void gfc_allocate_allocatable (stmtblock_t*, tree, tree, tree, tree,
+			       tree, tree, tree, gfc_expr*, int);
 
 /* Allocate memory, with optional status variable.  */
 void gfc_allocate_using_malloc (stmtblock_t *, tree, tree, tree);
@@ -776,9 +776,7 @@ extern GTY(()) tree gfor_fndecl_caf_finalize;
 extern GTY(()) tree gfor_fndecl_caf_this_image;
 extern GTY(()) tree gfor_fndecl_caf_num_images;
 extern GTY(()) tree gfor_fndecl_caf_register;
-extern GTY(()) tree gfor_fndecl_caf_register_component;
 extern GTY(()) tree gfor_fndecl_caf_deregister;
-extern GTY(()) tree gfor_fndecl_caf_deregister_component;
 extern GTY(()) tree gfor_fndecl_caf_get;
 extern GTY(()) tree gfor_fndecl_caf_send;
 extern GTY(()) tree gfor_fndecl_caf_sendget;

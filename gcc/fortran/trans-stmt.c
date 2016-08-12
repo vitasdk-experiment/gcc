@@ -5880,29 +5880,23 @@ gfc_trans_allocate (gfc_code * code)
 		 it here and are treated now.  */
 	      tree caf_decl, token;
 	      gfc_se caf_se;
-	      symbol_attribute attr;
 
-	      gfc_clear_attr (&attr);
 	      gfc_init_se (&caf_se, NULL);
 
 	      caf_decl = gfc_get_tree_for_caf_expr (expr);
 	      gfc_get_caf_token_offset (&caf_se, &token, NULL, caf_decl,
 					NULL_TREE, NULL);
-	      tmp = gfc_conv_scalar_to_descriptor (&caf_se, se.expr, attr);
 	      gfc_add_block_to_block (&se.pre, &caf_se.pre);
-	      gfc_allocate_allocatable (&se.pre, se.expr, memsz, NULL_TREE,
+	      gfc_allocate_allocatable (&se.pre, se.expr, memsz,
 					gfc_build_addr_expr (NULL_TREE, token),
 					NULL_TREE, NULL_TREE, NULL_TREE,
-					label_finish, expr, 1, tmp);
-	      gfc_add_modify (&se.pre, se.expr,
-			      fold_convert (TREE_TYPE (se.expr),
-					   gfc_conv_descriptor_data_get (tmp)));
+					label_finish, expr, 1);
 	    }
 	  /* Allocate - for non-pointers with re-alloc checking.  */
 	  else if (gfc_expr_attr (expr).allocatable)
-	    gfc_allocate_allocatable (&se.pre, se.expr, memsz, NULL_TREE,
+	    gfc_allocate_allocatable (&se.pre, se.expr, memsz,
 				      NULL_TREE, stat, errmsg, errlen,
-				      label_finish, expr, 0, NULL_TREE);
+				      label_finish, expr, 0);
 	  else
 	    gfc_allocate_using_malloc (&se.pre, se.expr, memsz, stat);
 
@@ -6169,10 +6163,12 @@ gfc_trans_allocate (gfc_code * code)
 	      /* Switch off automatic reallocation since we have just
 		 done the ALLOCATE.  */
 	      int realloc_lhs = flag_realloc_lhs;
+	      gfc_expr *init_expr = gfc_expr_to_initialize (expr);
 	      flag_realloc_lhs = 0;
-	      tmp = gfc_trans_assignment (gfc_expr_to_initialize (expr),
-					  e3rhs, false, false);
+	      tmp = gfc_trans_assignment (init_expr, e3rhs, false, false);
 	      flag_realloc_lhs = realloc_lhs;
+	      /* Free the expression allocated by gfc_expr_to_initializer().  */
+	      gfc_free_expr (init_expr);
 	    }
 	  gfc_add_expr_to_block (&block, tmp);
 	}

@@ -1033,6 +1033,8 @@ typedef struct gfc_component
 
   /* Needed for procedure pointer components.  */
   struct gfc_typebound_proc *tb;
+  /* When allocatable/pointer and in a coarray the associated token.  */
+  tree caf_token;
 }
 gfc_component;
 
@@ -2923,9 +2925,6 @@ bool gfc_is_associate_pointer (gfc_symbol*);
 gfc_symbol * gfc_find_dt_in_generic (gfc_symbol *);
 gfc_formal_arglist *gfc_sym_get_dummy_args (gfc_symbol *);
 
-int gfc_get_num_alloc_ptr_comps (gfc_symbol *);
-int gfc_get_alloc_ptr_comps_idx (gfc_expr *, symbol_attribute* attr = NULL,
-				 int *sub_com_num = NULL);
 gfc_symbol * gfc_get_caf_type_symbol (gfc_expr *);
 
 /* intrinsic.c -- true if working in an init-expr, false otherwise.  */

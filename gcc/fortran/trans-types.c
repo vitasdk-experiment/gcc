@@ -2688,6 +2688,17 @@ gfc_get_derived_type (gfc_symbol * derived, bool in_coarray)
       gcc_assert (field);
       if (!c->backend_decl)
 	c->backend_decl = field;
+
+      if (c->ts.type != BT_CLASS && !c->attr.dimension && !c->attr.codimension
+	  && c->attr.allocatable && c->caf_token == NULL_TREE)
+	{
+	  char caf_name[GFC_MAX_SYMBOL_LEN];
+	  snprintf (caf_name, GFC_MAX_SYMBOL_LEN, "_caf_%s", c->name);
+	  c->caf_token = gfc_add_field_to_struct (typenode,
+						  get_identifier (caf_name),
+						  pvoid_type_node, &chain);
+	  TREE_NO_WARNING (c->caf_token) = 1;
+	}
     }
 
   /* Now lay out the derived type, including the fields.  */
@@ -3347,8 +3358,8 @@ gfc_get_caf_reference_type ()
 				   gfc_array_index_type, &chain);
   TREE_NO_WARNING (tmp) = 1;
   tmp = gfc_add_field_to_struct_1 (c_struct_type,
-				   get_identifier ("idx"),
-				   integer_type_node, &chain);
+				   get_identifier ("caf_token_offset"),
+				   gfc_array_index_type, &chain);
   TREE_NO_WARNING (tmp) = 1;
   gfc_finish_type (c_struct_type);
 

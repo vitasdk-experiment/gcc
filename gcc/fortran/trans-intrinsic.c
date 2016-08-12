@@ -1095,6 +1095,23 @@ conv_caf_vector_subscript (stmtblock_t *block, tree desc, gfc_array_ref *ar)
 
 
 static tree
+compute_component_offset (tree field, tree type)
+{
+  tree tmp;
+  if (DECL_FIELD_BIT_OFFSET (field) != NULL_TREE
+      && !integer_zerop (DECL_FIELD_BIT_OFFSET (field)))
+    {
+      tmp = fold_build2 (TRUNC_DIV_EXPR, type,
+			 DECL_FIELD_BIT_OFFSET (field),
+			 bitsize_unit_node);
+      return fold_build2 (PLUS_EXPR, type, DECL_FIELD_OFFSET (field), tmp);
+    }
+  else
+    return DECL_FIELD_OFFSET (field);
+}
+
+
+static tree
 conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 {
   gfc_ref *ref = expr->ref;
@@ -1165,54 +1182,29 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 	     taken into account.  When the bit_offset in the field_decl is non-
 	     null, divide it by the bitsize_unit and add it to the regular
 	     offset.  */
-	  if (DECL_FIELD_BIT_OFFSET (ref->u.c.component->backend_decl)
-	      != NULL_TREE
-	      && !integer_zerop (
-		DECL_FIELD_BIT_OFFSET (ref->u.c.component->backend_decl)))
-	    {
-	      tmp2 = fold_build2 (TRUNC_DIV_EXPR, TREE_TYPE (tmp),
-		       DECL_FIELD_BIT_OFFSET (ref->u.c.component->backend_decl),
-				  bitsize_unit_node);
-	      tmp2 = fold_build2 (PLUS_EXPR, TREE_TYPE (tmp),
-			   DECL_FIELD_OFFSET (ref->u.c.component->backend_decl),
-				  tmp2);
-	    }
-	  else
-	    tmp2 = DECL_FIELD_OFFSET (ref->u.c.component->backend_decl);
+	  tmp2 = compute_component_offset (ref->u.c.component->backend_decl,
+					   TREE_TYPE (tmp));
 	  gfc_add_modify (block, tmp, fold_convert (TREE_TYPE (tmp), tmp2));
 
-	  /* Set idx.  */
+	  /* Set caf_token_offset.  */
 	  field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (inner_struct)), 1);
 	  tmp = fold_build3_loc (input_location, COMPONENT_REF,
 				 TREE_TYPE (field), inner_struct, field,
 				 NULL_TREE);
-	  if (ref->u.c.component->attr.allocatable)
+	  if (ref->u.c.component->attr.allocatable
+	      && ref->u.c.component->attr.dimension)
 	    {
-	       int comp_idx = 0;
-	       gfc_symbol *derived = ref->u.c.sym;
-	       gfc_component *comp;
-	       do
-		 {
-		   comp = derived->components;
-
-		   while (comp && comp != ref->u.c.component)
-		     {
-		       if (comp->attr.allocatable || comp->attr.pointer)
-			 /* Increment the component index for allocatable or pointer
-			    components only.  */
-			 ++comp_idx;
-		       comp = comp->next;
-		     }
-		   if (comp != NULL)
-		     break;
-		   /* Also catch the components of the super type.  */
-		   derived = gfc_get_derived_super_type (derived);
-		 }
-	       while (derived);
-	       tmp2 = build_int_cst (integer_type_node, comp_idx);
+	      /* Get the token from the descriptor.  */
+	      tmp2 = gfc_advance_chain (
+		    TYPE_FIELDS (TREE_TYPE (ref->u.c.component->backend_decl)),
+		    4 /* CAF_TOKEN_FIELD  */);
+	      tmp2 = compute_component_offset (tmp2, TREE_TYPE (tmp));
 	    }
+	  else if (ref->u.c.component->caf_token)
+	    tmp2 = compute_component_offset (ref->u.c.component->caf_token,
+					     TREE_TYPE (tmp));
 	  else
-	    tmp2 = integer_minus_one_node;
+	    tmp2 = integer_zero_node;
 	  gfc_add_modify (block, tmp, fold_convert (TREE_TYPE (tmp), tmp2));
 	  break;
 	case REF_ARRAY:
@@ -1820,7 +1812,8 @@ conv_caf_send (gfc_code *code) {
   image_index = gfc_caf_get_image_index (&block, lhs_expr, caf_decl);
   tmp = lhs_se.expr;
   if (lhs_caf_attr.alloc_comp)
-    gfc_get_caf_token_offset (&lhs_se, &token, NULL, caf_decl, NULL_TREE, NULL);
+    gfc_get_caf_token_offset (&lhs_se, &token, NULL, caf_decl, NULL_TREE,
+			      NULL);
   else
     gfc_get_caf_token_offset (&lhs_se, &token, &offset, caf_decl, tmp,
 			      lhs_expr);

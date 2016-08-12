@@ -38,18 +38,8 @@ struct caf_single_token
   /* The pointer to the memory registered.  For arrays this is the data member
      in the descriptor.  For components it's the pure data pointer.  */
   void *memptr;
-  /* When this token describes an array, then desc is the array descriptor. For
-     all other coarrays, desc is NULL.
-     Note, the array descriptor is only set for non-top-level arrays.
-     TODO: Set the descriptor also for top-level arrays.  */
+  /* The descriptor when this token is associated to an allocatable array.  */
   gfc_descriptor_t *desc;
-  /* The number of allocatable/pointer components in this derived type.
-     This is the number of entries of the components c-array below.  */
-  int num_comps;
-  /* The tokens of the allocatable components of this derived type.
-     If this token does not represent a derived type, then NULL.
-     When a component c is not registered yet, then component[c] ==  NULL.  */
-  struct caf_single_token **components;
   /* Set when the caf lib has allocated the memory in memptr and is responsible
      for freeing it on deregister. */
   bool owning_memory;
@@ -83,24 +73,25 @@ caf_runtime_error (const char *message, ...)
 
 /* Error handling is similar everytime.  */
 static void
-caf_internal_error (const char *msg, size_t msg_len, int *stat, char *errmsg,
-		    int errmsg_len)
+caf_internal_error (const char *msg, int *stat, char *errmsg,
+		    int errmsg_len, ...)
 {
+  va_list args;
+  va_start (args, errmsg_len);
   if (stat)
-  {
-    *stat = 1;
-    if (errmsg_len > 0)
     {
-      int len = ((int) msg_len > errmsg_len) ? errmsg_len
-						  : (int) msg_len;
-      memcpy (errmsg, msg, len);
-      if (errmsg_len > len)
-	memset (&errmsg[len], ' ', errmsg_len-len);
+      *stat = 1;
+      if (errmsg_len > 0)
+	{
+	  size_t len = snprintf (errmsg, errmsg_len, msg, args);
+	  if ((size_t)errmsg_len > len)
+	    memset (&errmsg[len], ' ', errmsg_len - len);
+	}
+      return;
     }
-    return;
-  }
   else
-    caf_runtime_error (msg);
+    caf_runtime_error (msg, args);
+  va_end (args);
 }
 
 
@@ -144,10 +135,10 @@ _gfortran_caf_num_images (int distance __attribute__ ((unused)),
 const char alloc_fail_msg[] = "Failed to allocate coarray";
 
 
-void *
+void
 _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
-			int *stat, char *errmsg, int errmsg_len,
-			int num_alloc_comps)
+			gfc_descriptor_t *data, int *stat, char *errmsg,
+			int errmsg_len)
 {
   void *local;
   caf_single_token_t single_token;
@@ -162,31 +153,15 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 
   if (unlikely (local == NULL || *token == NULL))
     {
-      caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat, errmsg,
-			  errmsg_len);
-      return NULL;
+      caf_internal_error (alloc_fail_msg, stat, errmsg, errmsg_len);
+      return;
     }
 
   single_token = TOKEN(*token);
   single_token->memptr = local;
-  single_token->desc = NULL;
   single_token->owning_memory = true;
-  single_token->num_comps = num_alloc_comps;
-  if (num_alloc_comps > 0)
-    {
-      single_token->components = (caf_single_token_t *) calloc (num_alloc_comps,
-						   sizeof (caf_single_token_t));
-      if (unlikely (single_token->components == NULL))
-	{
-	  caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat,
-			      errmsg, errmsg_len);
-	  free (local);
-	  free (*token);
-	  return NULL;
-	}
-    }
-  else
-    single_token->components = NULL;
+  single_token->desc = GFC_DESCRIPTOR_RANK (data) > 0 ? data : NULL;
+
 
   if (stat)
     *stat = 0;
@@ -200,16 +175,15 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
       tmp->token = *token;
       caf_static_list = tmp;
     }
-  return local;
+  GFC_DESCRIPTOR_DATA (data) = local;
 }
 
-
-void
+#if 0
+void *
 _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 				  size_t size, int comp_idx,
-				  gfc_descriptor_t *descriptor,
-				  int *stat, char *errmsg, int errmsg_len,
-				  int num_comp)
+				  gfc_descriptor_t *descriptor, int num_comp,
+				  int *stat, char *errmsg, int errmsg_len)
 {
   caf_single_token_t single_token = TOKEN(token);
   void *component = GFC_DESCRIPTOR_DATA (descriptor);
@@ -218,7 +192,7 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
     {
       const char msg[] = "Failed to register component (component_id out of "
 			 "range)";
-      caf_internal_error (msg, sizeof (msg), stat, errmsg, errmsg_len);
+      caf_internal_error (msg, stat, errmsg, errmsg_len);
       return;
     }
 
@@ -226,7 +200,7 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 					      sizeof (struct caf_single_token));
   if (unlikely (single_token->components[comp_idx] == NULL))
     {
-      caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat, errmsg,
+      caf_internal_error (alloc_fail_msg, stat, errmsg,
 			  errmsg_len);
      return;
     }
@@ -244,8 +218,7 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 
       if (unlikely (component == NULL))
 	{
-	  caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat,
-			      errmsg, errmsg_len);
+	  caf_internal_error (alloc_fail_msg, stat, errmsg, errmsg_len);
 	  /* Roll back to prevent memory loss.  */
 	  free (single_token->components[comp_idx]);
 	  single_token->components[comp_idx] = NULL;
@@ -262,8 +235,7 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
 				calloc (num_comp, sizeof (caf_single_token_t));
       if (unlikely (single_token->components[comp_idx]->components == NULL))
 	{
-	  caf_internal_error (alloc_fail_msg, sizeof (alloc_fail_msg), stat,
-			      errmsg, errmsg_len);
+	  caf_internal_error (alloc_fail_msg, stat, errmsg, errmsg_len);
 	  /* Roll back to prevent memory loss.  */
 	  if (single_token->components[comp_idx]->owning_memory)
 	    {
@@ -280,25 +252,18 @@ _gfortran_caf_register_component (caf_token_t token, caf_register_t type,
   if (stat)
     *stat = 0;
 }
+#endif
 
 
 void
-_gfortran_caf_deregister (caf_token_t *token, int *stat, char *errmsg,
-			  int errmsg_len)
+_gfortran_caf_deregister (caf_token_t *token, int *stat,
+			  char *errmsg __attribute__ ((unused)),
+			  int errmsg_len __attribute__ ((unused)))
 {
   caf_single_token_t single_token = TOKEN(*token);
-  /* Free components.  */
-  for (int i= 0; i< single_token->num_comps; ++i)
-    if (single_token->components[i] != NULL)
-      {
-	_gfortran_caf_deregister_component (single_token, i,
-					  &single_token->components[i]->memptr,
-					    NULL, errmsg, errmsg_len);
-      }
 
-  /* Free the array of the components.  */
-  if (single_token->components != NULL)
-    free (single_token->components);
+  if (single_token->owning_memory && single_token->memptr)
+    free (single_token->memptr);
 
   free (TOKEN(*token));
 
@@ -306,7 +271,7 @@ _gfortran_caf_deregister (caf_token_t *token, int *stat, char *errmsg,
     *stat = 0;
 }
 
-
+#if 0
 void
 _gfortran_caf_deregister_component (caf_token_t token, int comp_num,
 				    void **component, int *stat,
@@ -316,7 +281,7 @@ _gfortran_caf_deregister_component (caf_token_t token, int comp_num,
   if (unlikely (single_token->num_comps < comp_num))
     {
       const char msg[] = "Failed to free component (component_id out of range)";
-      caf_internal_error (msg, sizeof (msg), stat, errmsg, errmsg_len);
+      caf_internal_error (msg, stat, errmsg, errmsg_len);
       return;
     }
 
@@ -347,6 +312,7 @@ _gfortran_caf_deregister_component (caf_token_t token, int comp_num,
   if (stat)
     *stat = 0;
 }
+#endif
 
 
 void
@@ -1212,7 +1178,7 @@ copy_data (void *ds, void *sr, gfc_descriptor_t *dst, gfc_descriptor_t *src,
 	   size_t num, int *stat)
 {
   size_t k;
-  if (GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src)
+  if ((src == NULL || GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src))
       && dst_kind == src_kind)
     {
       memmove (ds, sr, (dst_size > src_size ? src_size : dst_size) * num);
@@ -1247,8 +1213,6 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 	     int dst_kind, int src_kind, size_t dst_dim, size_t src_dim,
 	     size_t num, int *stat)
 {
-  const char vecrefunknownkind[] = "libcaf_single::caf_get_by_ref(): "
-      "unknown kind in vector-ref.\n";
   ptrdiff_t extent_src = 1, array_offset_src = 0;
 
   if (unlikely (ref == NULL))
@@ -1265,9 +1229,10 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
       switch (ref->type)
 	{
 	case CAF_REF_COMPONENT:
-	  if (ref->u.c.idx >= 0)
-	    copy_data (ds, single_token->components[ref->u.c.idx]->memptr,
-		       dst, single_token->components[ref->u.c.idx]->desc,
+	  /* Because the token is always registered after the component, its
+	     offset is always greater zeor.  */
+	  if (ref->u.c.caf_token_offset > 0)
+	    copy_data (ds, *(void **)(sr + ref->u.c.offset), dst, NULL,
 		       dst_kind, src_kind, dst_size, ref->item_size, 1, stat);
 	  else
 	    copy_data (ds, sr + ref->u.c.offset, dst, src,
@@ -1302,12 +1267,12 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
   switch (ref->type)
     {
     case CAF_REF_COMPONENT:
-      if (ref->u.c.idx >= 0)
+      if (ref->u.c.caf_token_offset > 0)
 	get_for_ref (ref->next, i, dst_index,
-		     single_token->components[ref->u.c.idx],
-		     dst, single_token->components[ref->u.c.idx]->desc, ds,
-		     single_token->components[ref->u.c.idx]->memptr, dst_kind,
-		     src_kind, dst_dim, 0, 1, stat);
+		    *(caf_single_token_t*)(sr + ref->u.c.caf_token_offset), dst,
+		 (*(caf_single_token_t*)(sr + ref->u.c.caf_token_offset))->desc,
+		     ds, sr + ref->u.c.offset, dst_kind, src_kind, dst_dim, 0,
+		     1, stat);
       else
 	get_for_ref (ref->next, i, dst_index, single_token, dst,
 		     (gfc_descriptor_t *)(sr + ref->u.c.offset), ds,
@@ -1350,9 +1315,7 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 		KINDCASE (16, GFC_INTEGER_16);
 #endif
 		default:
-		  caf_internal_error (vecrefunknownkind,
-				      sizeof (vecrefunknownkind), stat,
-				      NULL, 0);
+		  caf_runtime_error (unreachable);
 		  return;
 		}
 #undef KINDCASE
@@ -1467,8 +1430,8 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 			  int dst_kind, int src_kind, bool may_require_tmp,
 			  bool dst_reallocatable, int *stat)
 {
-  const char compidxoutofrange[] = "libcaf_single::caf_get_by_ref(): "
-				   "component index out of range.\n";
+  const char vecrefunknownkind[] = "libcaf_single::caf_get_by_ref(): "
+				   "unknown kind in vector-ref.\n";
   const char unknownreftype[] = "libcaf_single::caf_get_by_ref(): "
 				"unknown reference type.\n";
   const char unknownarrreftype[] = "libcaf_single::caf_get_by_ref(): "
@@ -1480,7 +1443,7 @@ _gfortran_caf_get_by_ref (caf_token_t token,
   const char cannotallocdst[] = "libcaf_single::caf_get_by_ref(): "
 				"can not allocate memory.\n";
   const char nonallocextentmismatch[] = "libcaf_single::caf_get_by_ref(): "
-      "extent of non-allocatable array mismatch.\n";
+      "extent of non-allocatable array mismatch (%lu != %lu).\n";
   size_t size, i;
   size_t dst_index[GFC_MAX_DIMENSIONS];
   int dst_rank = GFC_DESCRIPTOR_RANK (dst);
@@ -1503,16 +1466,6 @@ _gfortran_caf_get_by_ref (caf_token_t token,
   if (stat)
     *stat = 0;
 
-  /* The first ref has to be a component ref.  */
-  if (refs->type != CAF_REF_COMPONENT)
-    {
-      const char firstneedstobecompref[] = "libcaf_single::caf_get_by_ref(): "
-	"first ref needs to be a component ref.\n";
-      caf_internal_error (firstneedstobecompref, sizeof (firstneedstobecompref),
-			  stat, NULL, 0);
-      return;
-    }
-
   /* Compute the size of the result.  In the beginning size just counts the
      number of elements.  */
   size = 1;
@@ -1521,16 +1474,10 @@ _gfortran_caf_get_by_ref (caf_token_t token,
       switch (riter->type)
 	{
 	case CAF_REF_COMPONENT:
-	  if (riter->u.c.idx >= 0)
+	  if (riter->u.c.caf_token_offset)
 	    {
-	      /* Dynamically allocated component.  */
-	      if (unlikely (single_token->num_comps < riter->u.c.idx))
-		{
-		  caf_internal_error (compidxoutofrange, sizeof (compidxoutofrange),
-				      stat, NULL, 0);
-		  return;
-		}
-	      single_token = single_token->components[riter->u.c.idx];
+	      single_token = *(caf_single_token_t*)
+					 (memptr + riter->u.c.caf_token_offset);
 	      memptr = single_token->memptr;
 	      src = single_token->desc;
 	    }
@@ -1541,35 +1488,74 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 	    }
 	  break;
 	case CAF_REF_ARRAY:
+//	  memptr = GFC_DESCRIPTOR_DATA (src);
 	  for (i = 0; riter->u.a.mode[i] != CAF_ARR_REF_NONE; ++i)
 	    {
 	      switch (riter->u.a.mode[i])
 		{
 		case CAF_ARR_REF_VECTOR:
 		  delta = riter->u.a.dim[i].v.nvec;
+#define KINDCASE(kind, type) case kind: \
+		    memptr += (((index_type) \
+			((type *)riter->u.a.dim[i].v.vector)[0]) \
+			- GFC_DIMENSION_LBOUND (src->dim[i])) \
+			* GFC_DIMENSION_STRIDE (src->dim[i]) \
+			* riter->item_size; \
+		    break
+
+		  switch (riter->u.a.dim[i].v.kind)
+		    {
+		    KINDCASE (1, GFC_INTEGER_1);
+		    KINDCASE (2, GFC_INTEGER_2);
+		    KINDCASE (4, GFC_INTEGER_4);
+#ifdef HAVE_GFC_INTEGER_8
+		    KINDCASE (8, GFC_INTEGER_8);
+#endif
+#ifdef HAVE_GFC_INTEGER_16
+		    KINDCASE (16, GFC_INTEGER_16);
+#endif
+		    default:
+		      caf_internal_error (vecrefunknownkind, stat, NULL, 0);
+		      return;
+		    }
+#undef KINDCASE
 		  break;
 		case CAF_ARR_REF_FULL:
 		  delta = (src->dim[i]._ubound - src->dim[i].lower_bound + 1);
+		  /* The memptr stays unchanged when ref'ing the first element
+		     in a dimension.  */
 		  break;
 		case CAF_ARR_REF_RANGE:
 		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start)
 		      / riter->u.a.dim[i].s.stride + 1;
+		  memptr += (riter->u.a.dim[i].s.start
+			     - src->dim[i].lower_bound)
+		      * GFC_DIMENSION_STRIDE (src->dim[i])
+		      * riter->item_size;
 		  break;
 		case CAF_ARR_REF_SINGLE:
 		  delta = 1;
+		  memptr += (riter->u.a.dim[i].s.start
+			     - src->dim[i].lower_bound)
+		      * GFC_DIMENSION_STRIDE (src->dim[i])
+		      * riter->item_size;
 		  break;
 		case CAF_ARR_REF_OPEN_END:
 		  delta = (src->dim[i]._ubound - riter->u.a.dim[i].s.start)
 		      / riter->u.a.dim[i].s.stride + 1;
+		  memptr += (riter->u.a.dim[i].s.start
+			     - src->dim[i].lower_bound)
+		      * GFC_DIMENSION_STRIDE (src->dim[i])
+		      * riter->item_size;
 		  break;
 		case CAF_ARR_REF_OPEN_START:
 		  delta = (riter->u.a.dim[i].s.end - src->dim[i].lower_bound)
 		      / riter->u.a.dim[i].s.stride + 1;
+		  /* The memptr stays unchanged when ref'ing the first element
+		     in a dimension.  */
 		  break;
 		default:
-		  caf_internal_error (unknownarrreftype,
-				      sizeof (unknownarrreftype), stat,
-				      NULL, 0);
+		  caf_internal_error (unknownarrreftype, stat, NULL, 0);
 		  return;
 		}
 	      if (delta <= 0)
@@ -1579,9 +1565,7 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		  /* Non-scalar dimension.  */
 		  if (unlikely (dst_cur_dim >= dst_rank))
 		    {
-		      caf_internal_error (rankoutofrange,
-					  sizeof (rankoutofrange),
-					  stat, NULL, 0);
+		      caf_internal_error (rankoutofrange, stat, NULL, 0);
 		      return;
 		    }
 		  if (realloc_required || realloc_needed
@@ -1589,17 +1573,16 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		    {
 		      if (unlikely (!dst_reallocatable))
 			{
-			  caf_internal_error (nonallocextentmismatch,
-					      sizeof (nonallocextentmismatch),
-					      stat, NULL, 0);
+			  caf_internal_error (nonallocextentmismatch, stat,
+					      NULL, 0, delta,
+				      GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim));
+			  return;
 			}
 		      else if (! dst_reallocatable
 			       && GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim)
 				  != delta)
 			{
-			  caf_internal_error (extentoutofrange,
-					      sizeof (extentoutofrange),
-					      stat, NULL, 0);
+			  caf_internal_error (extentoutofrange, stat, NULL, 0);
 			  return;
 			}
 		      realloc_needed = true;
@@ -1609,16 +1592,9 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		}
 	      size *= (index_type)delta;
 	    }
-	  /* For now take the first entry from the array to proceed in size
-	     calculation.
-	     TODO: Take the actually first reffed item of the array, because
-		   the first entry in the array may point to unallocated
-		   data.  */
-	  memptr = GFC_DESCRIPTOR_DATA (src);
 	  break;
 	default:
-	  caf_internal_error (unknownreftype, sizeof (unknownreftype), stat,
-			      NULL, 0);
+	  caf_internal_error (unknownreftype, stat, NULL, 0);
 	  return;
 	}
       src_size = riter->item_size;
@@ -1637,8 +1613,7 @@ _gfortran_caf_get_by_ref (caf_token_t token,
       GFC_DESCRIPTOR_DATA (dst) = malloc (size * GFC_DESCRIPTOR_SIZE (dst));
       if (unlikely (GFC_DESCRIPTOR_DATA (dst) == NULL))
 	{
-	  caf_internal_error (cannotallocdst, sizeof (cannotallocdst), stat,
-			      NULL, 0);
+	  caf_internal_error (cannotallocdst, stat, NULL, 0);
 	  return;
 	}
     }
@@ -1782,56 +1757,54 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 
   if (ref->next == NULL)
     {
-      size_t dst_size = GFC_DESCRIPTOR_SIZE (dst);
+      size_t src_size = GFC_DESCRIPTOR_SIZE (src);
       ptrdiff_t array_offset_src = 0;;
-      size_t dst_rank = GFC_DESCRIPTOR_RANK (dst);
 
       switch (ref->type)
 	{
 	case CAF_REF_COMPONENT:
-	  if (ref->u.c.idx >= 0)
+	  if (ref->u.c.caf_token_offset > 0)
 	    {
-	      if (single_token->components[ref->u.c.idx] == NULL)
+	      if (*(void**)(ds + ref->u.c.offset) == NULL)
 		{
 		  dst = (gfc_descriptor_t *)
 		      malloc (sizeof (gfc_descriptor_t));
 		  GFC_DESCRIPTOR_DATA (dst) = NULL;
 		  GFC_DESCRIPTOR_DTYPE (dst) =
 		      GFC_DESCRIPTOR_DTYPE (src);
-		  dst_size = GFC_DESCRIPTOR_SIZE (dst);
 		  /* The component may be allocated now, because it is a
 				 scalar.  */
-		  _gfortran_caf_register_component (single_token,
-						    CAF_REGTYPE_COARRAY_ALLOC,
-						    ref->item_size,
-						    ref->u.c.idx,
-						    dst, stat, NULL,
-						    0, 0);
+		  single_token = *(caf_single_token_t*)
+					       (ds + ref->u.c.caf_token_offset);
+		  _gfortran_caf_register (ref->item_size,
+					  CAF_REGTYPE_COARRAY_ALLOC,
+					  (caf_token_t *)&single_token,
+					  dst, stat, NULL, 0);
 		  /* In case of an error in allocation return.  When stat is
-				 NULL, then register_component() terminates on error.  */
+		     NULL, then register_component() terminates on error.  */
 		  if (stat != NULL && *stat)
 		    return;
 		  /* Publish the allocated memory.  */
 		  *((void **)(ds + ref->u.c.offset)) =
-		      single_token->components[ref->u.c.idx]->memptr;
+		      GFC_DESCRIPTOR_DATA (dst);
 		  /* The memptr, descriptor and the token are set below.  */
 		}
-	      copy_data (single_token->components[ref->u.c.idx]->memptr, sr,
-		  single_token->components[ref->u.c.idx]->desc, src,
-		  dst_kind, src_kind, dst_size, ref->item_size, 1, stat);
+	      copy_data (GFC_DESCRIPTOR_DATA (dst), sr, dst, src,
+		  dst_kind, src_kind, ref->item_size, src_size, 1, stat);
 	    }
 	  else
 	    copy_data (ds + ref->u.c.offset, sr, dst, src,
-		       dst_kind, src_kind, dst_size, ref->item_size, 1, stat);
+		       dst_kind, src_kind, ref->item_size, src_size, 1, stat);
 	  ++(*i);
 	  return;
 	case CAF_REF_ARRAY:
 	  if (ref->u.a.mode[dst_dim] == CAF_ARR_REF_NONE)
 	    {
-	      for (size_t d = 0; d < dst_rank; ++d)
+	      size_t src_rank = GFC_DESCRIPTOR_RANK (src);
+	      for (size_t d = 0; d < src_rank; ++d)
 		array_offset_src += src_index[d];
 	      copy_data (ds, sr + array_offset_src * ref->item_size, dst, src,
-			 dst_kind, src_kind, dst_size, ref->item_size, num,
+			 dst_kind, src_kind, ref->item_size, src_size, num,
 			 stat);
 	      *i += num;
 	      return;
@@ -1853,39 +1826,37 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
   switch (ref->type)
     {
     case CAF_REF_COMPONENT:
-      if (ref->u.c.idx >= 0)
+      if (ref->u.c.caf_token_offset > 0)
 	{
-	  if (single_token->components[ref->u.c.idx] == NULL)
+	  if (*(void**)(ds + ref->u.c.offset) == NULL)
 	    {
-	      /* This component refs an unallocated array.  */
+	      /* This component refs an unallocated array.  Non-arrays are
+	         caught in the if (!ref->next) above.  */
 	      dst = (gfc_descriptor_t *)(ds + ref->u.c.offset);
 	      /* Assume that the rank and the dimensions fit for copying src
-		 to dst.  */
+		     to dst.  */
 	      *dst = *src;
 	      /* Null the data-pointer to make register_component allocate
-		 its own memory.  */
+		     its own memory.  */
 	      GFC_DESCRIPTOR_DATA (dst) = NULL;
+	      single_token = (caf_single_token_t)(calloc (1,
+					     sizeof (struct caf_single_token)));
 
 	      /* The size of the array is given by size.  */
-	      _gfortran_caf_register_component (single_token,
-						CAF_REGTYPE_COARRAY_ALLOC,
-						size * ref->item_size,
-						ref->u.c.idx,
-						dst, stat, NULL,
-						0, 0);
+	      _gfortran_caf_register (size * ref->item_size,
+				      CAF_REGTYPE_COARRAY_ALLOC,
+				      (void **)&single_token,
+				      dst, stat, NULL, 0);
 	      /* In case of an error in allocation return.  When stat is
-		 NULL, then register_component() terminates on error.  */
+		     NULL, then register_component() terminates on error.  */
 	      if (stat != NULL && *stat)
 		return;
-	      /* Publish the allocated memory.  */
-	      GFC_DESCRIPTOR_DATA (dst) =
-		  single_token->components[ref->u.c.idx]->memptr;
 	      /* The memptr, descriptor and the token are set below.  */
+	      GFC_DESCRIPTOR_CAF_TOKEN (dst) = single_token;
 	    }
-	  send_by_ref (ref->next, i, src_index,
-		       single_token->components[ref->u.c.idx],
-		       single_token->components[ref->u.c.idx]->desc, src,
-		       single_token->components[ref->u.c.idx]->memptr, sr,
+	  single_token = *(caf_single_token_t*)(ds + ref->u.c.caf_token_offset);
+	  send_by_ref (ref->next, i, src_index, single_token,
+		       single_token->desc, src, ds + ref->u.c.offset, sr,
 		       dst_kind, src_kind, 0, src_dim, 1, size, stat);
 	}
       else
@@ -1930,9 +1901,7 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 		KINDCASE (16, GFC_INTEGER_16);
 #endif
 		default:
-		  caf_internal_error (vecrefunknownkind,
-				      sizeof (vecrefunknownkind), stat,
-				      NULL, 0);
+		  caf_internal_error (vecrefunknownkind, stat, NULL, 0);
 		  return;
 		}
 #undef KINDCASE
@@ -2042,8 +2011,6 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 			   int dst_kind, int src_kind, bool may_require_tmp,
 			   bool dst_reallocatable, int *stat)
 {
-  const char compidxoutofrange[] = "libcaf_single::caf_send_by_ref(): "
-				   "component index out of range.\n";
   const char unknownreftype[] = "libcaf_single::caf_send_by_ref(): "
 				"unknown reference type.\n";
   const char unknownarrreftype[] = "libcaf_single::caf_send_by_ref(): "
@@ -2068,8 +2035,6 @@ _gfortran_caf_send_by_ref (caf_token_t token,
   gfc_descriptor_t *dst = single_token->desc;
   caf_reference_t *riter = refs;
   long delta;
-  /* Reallocation of dst.data is needed (e.g., array to small).  */
-  bool realloc_needed;
   /* Note that the component is not allocated yet.  */
   index_type new_component_idx = -1;
 
@@ -2081,8 +2046,7 @@ _gfortran_caf_send_by_ref (caf_token_t token,
     {
       const char firstneedstobecompref[] = "libcaf_single::caf_send_by_ref(): "
 	"first ref needs to be a component ref.\n";
-      caf_internal_error (firstneedstobecompref, sizeof (firstneedstobecompref),
-			  stat, NULL, 0);
+      caf_internal_error (firstneedstobecompref, stat, NULL, 0);
       return;
     }
 
@@ -2098,29 +2062,21 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 	    {
 	      /* Allocating a component in the middle of a component ref is not
 		 support.  We don't know the type to allocate.  */
-	      caf_internal_error (innercompref, sizeof (innercompref), stat,
-				  NULL, 0);
+	      caf_internal_error (innercompref, stat, NULL, 0);
 	      return;
 	    }
-	  if (riter->u.c.idx >= 0)
+	  if (riter->u.c.caf_token_offset > 0)
 	    {
-	      /* Dynamically allocated component.  */
-	      if (unlikely (single_token->num_comps < riter->u.c.idx))
-		{
-		  caf_internal_error (compidxoutofrange,
-				      sizeof (compidxoutofrange),
-				      stat, NULL, 0);
-		  return;
-		}
-	      if (single_token->components[riter->u.c.idx] == NULL)
+	      /* Check whether the allocatable component is zero, then no
+		 token is present, too.  The token's pointer is not cleared
+		 when the structure is initialized.  */
+	      if (*(void**)(memptr + riter->u.c.offset) == NULL)
 		{
 		  /* This component is not yet allocated.  Check that it is
 		     allocatable here.  */
 		  if (!dst_reallocatable)
 		    {
-		      caf_internal_error (cannotallocdst,
-					  sizeof (cannotallocdst),
-					  stat, NULL, 0);
+		      caf_internal_error (cannotallocdst, stat, NULL, 0);
 		      return;
 		    }
 		  single_token = NULL;
@@ -2128,8 +2084,9 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		  dst = NULL;
 		  break;
 		}
-	      single_token = single_token->components[riter->u.c.idx];
-	      memptr = single_token->memptr;
+	      single_token = *(caf_single_token_t*)
+					 (memptr + riter->u.c.caf_token_offset);
+	      memptr += riter->u.c.offset;
 	      dst = single_token->desc;
 	    }
 	  else
@@ -2181,9 +2138,7 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 			/ riter->u.a.dim[i].s.stride + 1;
 		  break;
 		default:
-		  caf_internal_error (unknownarrreftype,
-				      sizeof (unknownarrreftype), stat,
-				      NULL, 0);
+		  caf_internal_error (unknownarrreftype, stat, NULL, 0);
 		  return;
 		}
 
@@ -2194,39 +2149,30 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		  /* Non-scalar dimension.  */
 		  if (unlikely (src_cur_dim >= src_rank))
 		    {
-		      caf_internal_error (rankoutofrange,
-					  sizeof (rankoutofrange),
-					  stat, NULL, 0);
+		      caf_internal_error (rankoutofrange, stat, NULL, 0);
 		      return;
 		    }
 		  if (dst && GFC_DESCRIPTOR_EXTENT (dst, src_cur_dim) != delta)
 		    {
 		      if (unlikely (!dst_reallocatable))
 			{
-			  caf_internal_error (nonallocextentmismatch,
-					      sizeof (nonallocextentmismatch),
-					      stat, NULL, 0);
+			  caf_internal_error (nonallocextentmismatch, stat,
+					      NULL, 0);
 			}
 		      else if (riter->next != NULL)
 			{
-			  caf_internal_error (realloconinnerref,
-					      sizeof (realloconinnerref),
-					      stat, NULL, 0);
+			  caf_internal_error (realloconinnerref, stat, NULL, 0);
 			  return;
 			}
-		      realloc_needed = true;
 		      GFC_DIMENSION_SET (dst->dim[src_cur_dim], 1, delta, size);
 		    }
 		  else if (!dst)
 		    {
 		      if (!dst_reallocatable)
 			{
-			  caf_internal_error (cannotallocdst,
-					      sizeof (cannotallocdst),
-					      stat, NULL, 0);
+			  caf_internal_error (cannotallocdst, stat, NULL, 0);
 			  return;
 			}
-		      realloc_needed = true;
 		    }
 		  ++src_cur_dim;
 		}
@@ -2240,8 +2186,7 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 	  memptr = dst ? GFC_DESCRIPTOR_DATA (dst): NULL;
 	  break;
 	default:
-	  caf_internal_error (unknownreftype, sizeof (unknownreftype), stat,
-			      NULL, 0);
+	  caf_internal_error (unknownreftype, stat, NULL, 0);
 	  return;
 	}
       src_size = riter->item_size;
@@ -2253,18 +2198,6 @@ _gfortran_caf_send_by_ref (caf_token_t token,
      - size contains the number of elements to store in the destination array,
      - src_size gives the size in bytes of each item in the destination array.
   */
-
-//  if (realloc_needed)
-//    {
-//      /* TODO: dst_dim > 1 */
-//      GFC_DESCRIPTOR_DATA (dst) = malloc (size * GFC_DESCRIPTOR_SIZE (dst));
-//      if (unlikely (GFC_DESCRIPTOR_DATA (dst) == NULL))
-//	{
-//	  caf_internal_error (cannotallocdst, sizeof (cannotallocdst), stat,
-//			      NULL, 0);
-//	  return;
-//	}
-//    }
 
   /* Reset the token.  */
   single_token = TOKEN (token);

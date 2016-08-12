@@ -5081,19 +5081,19 @@ gfc_array_init_size (tree descriptor, int rank, int corank, tree * poffset,
   stride = gfc_index_one_node;
   offset = gfc_index_zero_node;
 
-  /* Set the dtype.  */
+  /* Set the dtype before the alloc, because registration of coarrays needs
+     it initialized.  */
   if (expr->ts.type == BT_CHARACTER && expr->ts.deferred
       && TREE_CODE (expr->ts.u.cl->backend_decl) == VAR_DECL)
     {
       type = gfc_typenode_for_spec (&expr->ts);
       tmp = gfc_conv_descriptor_dtype (descriptor);
-      gfc_add_modify (descriptor_block, tmp,
-		      gfc_get_dtype_rank_type (rank, type));
+      gfc_add_modify (pblock, tmp, gfc_get_dtype_rank_type (rank, type));
     }
   else
     {
       tmp = gfc_conv_descriptor_dtype (descriptor);
-      gfc_add_modify (descriptor_block, tmp, gfc_get_dtype (type));
+      gfc_add_modify (pblock, tmp, gfc_get_dtype (type));
     }
 
   or_expr = boolean_false_node;
@@ -5541,10 +5541,9 @@ gfc_array_allocate (gfc_se * se, gfc_expr * expr, tree status, tree errmsg,
 
   /* The allocatable variant takes the old pointer as first argument.  */
   if (allocatable)
-    gfc_allocate_allocatable (&elseblock, pointer, size, *nelems, token,
+    gfc_allocate_allocatable (&elseblock, pointer, size, token,
 			      status, errmsg, errlen, label_finish, expr,
-			      coref != NULL ? coref->u.ar.as->corank : 0,
-			      se->expr);
+			      coref != NULL ? coref->u.ar.as->corank : 0);
   else
     gfc_allocate_using_malloc (&elseblock, pointer, size, status);
 
@@ -8668,8 +8667,6 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
   gfc_array_spec * as;
   bool coarray = (flag_coarray == GFC_FCOARRAY_LIB
 		  && gfc_caf_attr(expr1, true).codimension);
-  int caf_comp_idx = -1, caf_num_allocptr_comps = 0,
-      caf_num_sub_allocptr_comps = 0;
   tree token;
   gfc_se caf_se;
 
@@ -8986,6 +8983,11 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
       gfc_add_modify (&fblock, tmp,
 		      gfc_get_dtype_rank_type (expr1->rank,type));
     }
+  else if (coarray && GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (desc)))
+    {
+      gfc_add_modify (&fblock, gfc_conv_descriptor_dtype (desc),
+		      gfc_get_dtype (TREE_TYPE (desc)));
+    }
 
   /* Realloc expression.  Note that the scalarizer uses desc.data
      in the array reference - (*desc.data)[<element>].  */
@@ -8994,13 +8996,15 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
 
   if (coarray)
     {
-      caf_comp_idx = gfc_get_alloc_ptr_comps_idx (expr1, NULL,
-						  &caf_num_sub_allocptr_comps);
-      caf_num_allocptr_comps =
-	      gfc_get_num_alloc_ptr_comps (gfc_get_caf_type_symbol (expr1));
+      token = gfc_get_alloc_ptr_comps_caf_token (&caf_se, expr1);
+      if (token == NULL_TREE)
+	{
+	  tmp = gfc_get_tree_for_caf_expr (expr1);
+	  gfc_get_caf_token_offset (&caf_se, &token, NULL, tmp, NULL_TREE,
+				    expr1);
+	  token = gfc_build_addr_expr (NULL_TREE, token);
+	}
 
-      tmp = gfc_get_tree_for_caf_expr (expr1);
-      gfc_get_caf_token_offset (&caf_se, &token, NULL, tmp, NULL_TREE, expr1);
       gfc_add_block_to_block (&realloc_block, &caf_se.pre);
     }
   if ((expr1->ts.type == BT_DERIVED)
@@ -9022,53 +9026,20 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
     }
   else
     {
-      if (caf_comp_idx != -1)
-	{
-	  /* The size of the component has changed. Deregister it, then
-	     register it again. */
-	  tmp = build_call_expr_loc (input_location,
-				     gfor_fndecl_caf_deregister_component,
-				     6, token,
-				     build_int_cst (integer_type_node,
-						    caf_comp_idx),
-				     gfc_conv_descriptor_data_addr (desc),
-				     null_pointer_node, null_pointer_node,
-				     integer_zero_node);
-	  gfc_add_expr_to_block (&realloc_block, tmp);
-	  tmp = build_call_expr_loc (input_location,
-				     gfor_fndecl_caf_register_component,
-				     9, token,
-				     build_int_cst (integer_type_node,
-						    GFC_CAF_COARRAY_ALLOC),
-				     size2, build_int_cst (integer_type_node,
-							   caf_comp_idx),
-				     gfc_build_addr_expr (NULL_TREE, desc),
-				     null_pointer_node, null_pointer_node,
-				     integer_zero_node,
-				     build_int_cst (integer_type_node,
-						   caf_num_sub_allocptr_comps));
-	  gfc_add_expr_to_block (&realloc_block, tmp);
-	}
-      else
-	{
-	  token = gfc_build_addr_expr (NULL_TREE, token);
-	  tmp = build_call_expr_loc (input_location,
-				     gfor_fndecl_caf_deregister,
-				     4, token, null_pointer_node,
-				     null_pointer_node, integer_zero_node);
-	  gfc_add_expr_to_block (&realloc_block, tmp);
-	  tmp = build_call_expr_loc (input_location,
-				     gfor_fndecl_caf_register,
-				     7, size2,
-				     build_int_cst (integer_type_node,
-						    GFC_CAF_COARRAY_ALLOC),
-				     token, null_pointer_node,
-				     null_pointer_node, integer_zero_node,
-				     build_int_cst (integer_type_node,
-						    caf_num_allocptr_comps));
-	  gfc_conv_descriptor_data_set (&alloc_block,
-					desc, tmp);
-	}
+      tmp = build_call_expr_loc (input_location,
+				 gfor_fndecl_caf_deregister,
+				 4, token, null_pointer_node,
+				 null_pointer_node, integer_zero_node);
+      gfc_add_expr_to_block (&realloc_block, tmp);
+      tmp = build_call_expr_loc (input_location,
+				 gfor_fndecl_caf_register,
+				 7, size2,
+				 build_int_cst (integer_type_node,
+						GFC_CAF_COARRAY_ALLOC),
+				 token, gfc_build_addr_expr (NULL_TREE, desc),
+				 null_pointer_node, null_pointer_node,
+				 integer_zero_node);
+      gfc_add_expr_to_block (&realloc_block, tmp);
     }
 
   if ((expr1->ts.type == BT_DERIVED)
@@ -9100,44 +9071,23 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
     }
   else
     {
-      if (caf_comp_idx != -1)
-	{
-	  tmp = build_call_expr_loc (input_location,
-				     gfor_fndecl_caf_register_component,
-				     9, token,
-				     build_int_cst (integer_type_node,
-						    GFC_CAF_COARRAY_ALLOC),
-				     size2, build_int_cst (integer_type_node,
-							   caf_comp_idx),
-				     gfc_build_addr_expr (NULL_TREE, desc),
-				     null_pointer_node, null_pointer_node,
-				     integer_zero_node,
-				     build_int_cst (integer_type_node,
-						   caf_num_sub_allocptr_comps));
-	  gfc_add_expr_to_block (&alloc_block, tmp);
-	}
-      else
-	{
-	  token = gfc_build_addr_expr (NULL_TREE, token);
-	  tmp = build_call_expr_loc (input_location,
-				     gfor_fndecl_caf_register,
-				     7, size2,
-				     build_int_cst (integer_type_node,
-						    GFC_CAF_COARRAY_ALLOC),
-				     token, null_pointer_node,
-				     null_pointer_node, integer_zero_node,
-				     build_int_cst (integer_type_node,
-						    caf_num_allocptr_comps));
-	  gfc_conv_descriptor_data_set (&alloc_block,
-					desc, tmp);
-	}
+      tmp = build_call_expr_loc (input_location,
+				 gfor_fndecl_caf_register,
+				 7, size2,
+				 build_int_cst (integer_type_node,
+						GFC_CAF_COARRAY_ALLOC),
+				 token, gfc_build_addr_expr (NULL_TREE, desc),
+				 null_pointer_node, null_pointer_node,
+				 integer_zero_node);
+      gfc_add_expr_to_block (&alloc_block, tmp);
     }
 
 
   /* We already set the dtype in the case of deferred character
      length arrays.  */
   if (!(GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (desc))
-        && expr1->ts.type == BT_CHARACTER && expr1->ts.deferred))
+        && ((expr1->ts.type == BT_CHARACTER && expr1->ts.deferred)
+	    || coarray)))
     {
       tmp = gfc_conv_descriptor_dtype (desc);
       gfc_add_modify (&alloc_block, tmp, gfc_get_dtype (TREE_TYPE (desc)));

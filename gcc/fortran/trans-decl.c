@@ -131,9 +131,7 @@ tree gfor_fndecl_caf_finalize;
 tree gfor_fndecl_caf_this_image;
 tree gfor_fndecl_caf_num_images;
 tree gfor_fndecl_caf_register;
-tree gfor_fndecl_caf_register_component;
 tree gfor_fndecl_caf_deregister;
-tree gfor_fndecl_caf_deregister_component;
 tree gfor_fndecl_caf_get;
 tree gfor_fndecl_caf_send;
 tree gfor_fndecl_caf_sendget;
@@ -3558,26 +3556,13 @@ gfc_build_builtin_function_decls (void)
 	2, integer_type_node, integer_type_node);
 
       gfor_fndecl_caf_register = gfc_build_library_function_decl_with_spec (
-	get_identifier (PREFIX("caf_register")), "...WWW.", pvoid_type_node, 7,
-	size_type_node, integer_type_node, ppvoid_type_node, pint_type,
-	pchar_type_node, integer_type_node, integer_type_node);
-
-      gfor_fndecl_caf_register_component =
-	gfc_build_library_function_decl_with_spec (
-	  get_identifier (PREFIX("caf_register_component")), ".RRRWWWWR",
-	  void_type_node, 9, pvoid_type_node, integer_type_node, size_type_node,
-	  integer_type_node, pvoid_type_node, pint_type, pchar_type_node,
-	  integer_type_node, integer_type_node);
+	get_identifier (PREFIX("caf_register")), "RRWWWWR", void_type_node, 7,
+	size_type_node, integer_type_node, ppvoid_type_node, pvoid_type_node,
+	pint_type, pchar_type_node, integer_type_node);
 
       gfor_fndecl_caf_deregister = gfc_build_library_function_decl_with_spec (
-	get_identifier (PREFIX("caf_deregister")), ".WWW", void_type_node, 4,
+	get_identifier (PREFIX("caf_deregister")), "WWWR", void_type_node, 4,
 	ppvoid_type_node, pint_type, pchar_type_node, integer_type_node);
-
-      gfor_fndecl_caf_deregister_component =
-	gfc_build_library_function_decl_with_spec (
-	  get_identifier (PREFIX("caf_deregister_component")), "..WWWW",
-	  void_type_node, 6, pvoid_type_node, integer_type_node,
-	  ppvoid_type_node, pint_type, pchar_type_node, integer_type_node);
 
       gfor_fndecl_caf_get = gfc_build_library_function_decl_with_spec (
 	get_identifier (PREFIX("caf_get")), ".R.RRWRRRW", void_type_node, 10,
@@ -5033,9 +5018,11 @@ gfc_emit_parameter_debug_info (gfc_symbol *sym)
 static void
 generate_coarray_sym_init (gfc_symbol *sym)
 {
-  tree tmp, size, decl, token;
+  tree tmp, size, decl, token, desc;
   bool is_lock_type, is_event_type;
-  int reg_type, num_dyn_comps;
+  int reg_type;
+  gfc_se se;
+  symbol_attribute attr;
 
   if (sym->attr.dummy || sym->attr.allocatable || !sym->attr.codimension
       || sym->attr.use_assoc || !sym->attr.referenced
@@ -5086,18 +5073,20 @@ generate_coarray_sym_init (gfc_symbol *sym)
     reg_type = GFC_CAF_EVENT_STATIC;
   else
     reg_type = GFC_CAF_COARRAY_STATIC;
-  if (sym->ts.type == BT_DERIVED)
-    /* Get the allocatable or pointer components of the derived type.  */
-    num_dyn_comps = gfc_get_num_alloc_ptr_comps (sym->ts.u.derived);
-  else
-    num_dyn_comps = 0;
+
+  gfc_init_se (&se, NULL);
+  desc = gfc_conv_scalar_to_descriptor (&se, decl, attr);
+  gfc_add_block_to_block (&caf_init_block, &se.pre);
+
   tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_register, 7, size,
 			     build_int_cst (integer_type_node, reg_type),
-			     token, null_pointer_node, /* token, stat.  */
+			     token, gfc_build_addr_expr (pvoid_type_node, desc),
+			     null_pointer_node, /* stat.  */
 			     null_pointer_node, /* errgmsg, errmsg_len.  */
-			     build_int_cst (integer_type_node, 0),
-			     build_int_cst (integer_type_node, num_dyn_comps));
-  gfc_add_modify (&caf_init_block, decl, fold_convert (TREE_TYPE (decl), tmp));
+			     build_int_cst (integer_type_node, 0));
+  gfc_add_expr_to_block (&caf_init_block, tmp);
+  gfc_add_modify (&caf_init_block, decl, fold_convert (TREE_TYPE (decl),
+					  gfc_conv_descriptor_data_get (desc)));
 
   /* Handle "static" initializer.  */
   if (sym->value)
