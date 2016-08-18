@@ -95,16 +95,16 @@ gfc_conv_scalar_to_descriptor (gfc_se *se, tree scalar, symbol_attribute attr)
 }
 
 
-/* Get the coarray token from the array or from the component.
+/* Get the coarray token from the ultimate array or component ref.
    Returns a NULL_TREE, when the ref object is not allocatable or pointer.  */
 
 tree
-gfc_get_alloc_ptr_comps_caf_token (gfc_se *outerse, gfc_expr *expr)
+gfc_get_ultimate_alloc_ptr_comps_caf_token (gfc_se *outerse, gfc_expr *expr)
 {
   gfc_symbol *sym = expr->symtree->n.sym;
   bool is_coarray = sym->attr.codimension;
   gfc_expr *caf_expr = gfc_copy_expr (expr);
-  gfc_ref *ref = caf_expr->ref;
+  gfc_ref *ref = caf_expr->ref, *last_caf_ref = NULL;
 
   while (ref)
     {
@@ -112,35 +112,36 @@ gfc_get_alloc_ptr_comps_caf_token (gfc_se *outerse, gfc_expr *expr)
 	  && (ref->u.c.component->attr.allocatable
 	      || ref->u.c.component->attr.pointer)
 	  && (is_coarray || ref->u.c.component->attr.codimension))
-	{
-	  tree comp = ref->u.c.component->caf_token, caf;
-	  gfc_se se;
-	  bool comp_ref = !ref->u.c.component->attr.dimension;
-	  if (comp == NULL_TREE && comp_ref)
-	    return NULL_TREE;
-	  gfc_init_se (&se, outerse);
-	  gfc_free_ref_list (ref->next);
-	  ref->next = NULL;
-	  caf_expr->rank = comp_ref ? 0 : ref->u.c.component->as->rank;
-	  se.want_pointer = comp_ref;
-	  gfc_conv_expr (&se, caf_expr);
-	  gfc_add_block_to_block (&outerse->pre, &se.pre);
-
-	  if (TREE_CODE (se.expr) == COMPONENT_REF && comp_ref)
-	    se.expr = TREE_OPERAND (se.expr, 0);
-	  gfc_free_expr (caf_expr);
-
-	  if (comp_ref)
-	    caf = fold_build3_loc (input_location, COMPONENT_REF,
-				   TREE_TYPE (comp), se.expr, comp, NULL_TREE);
-	  else
-	    caf = gfc_conv_descriptor_token (se.expr);
-	  return gfc_build_addr_expr (NULL_TREE, caf);
-	}
+	  last_caf_ref = ref;
       ref = ref->next;
     }
 
-  return NULL_TREE;
+  if (last_caf_ref == NULL)
+    return NULL_TREE;
+
+  tree comp = last_caf_ref->u.c.component->caf_token, caf;
+  gfc_se se;
+  bool comp_ref = !last_caf_ref->u.c.component->attr.dimension;
+  if (comp == NULL_TREE && comp_ref)
+    return NULL_TREE;
+  gfc_init_se (&se, outerse);
+  gfc_free_ref_list (last_caf_ref->next);
+  last_caf_ref->next = NULL;
+  caf_expr->rank = comp_ref ? 0 : last_caf_ref->u.c.component->as->rank;
+  se.want_pointer = comp_ref;
+  gfc_conv_expr (&se, caf_expr);
+  gfc_add_block_to_block (&outerse->pre, &se.pre);
+
+  if (TREE_CODE (se.expr) == COMPONENT_REF && comp_ref)
+    se.expr = TREE_OPERAND (se.expr, 0);
+  gfc_free_expr (caf_expr);
+
+  if (comp_ref)
+    caf = fold_build3_loc (input_location, COMPONENT_REF,
+			   TREE_TYPE (comp), se.expr, comp, NULL_TREE);
+  else
+    caf = gfc_conv_descriptor_token (se.expr);
+  return gfc_build_addr_expr (NULL_TREE, caf);
 }
 
 
@@ -1874,86 +1875,46 @@ gfc_get_tree_for_caf_expr (gfc_expr *expr)
   gcc_assert (expr && expr->expr_type == EXPR_VARIABLE);
 
   /* Not-implemented diagnostic.  */
-//  for (ref = expr->ref; ref; ref = ref->next)
-//    if (ref->type == REF_COMPONENT)
-//      {
-//        comp_ref = ref;
-//	if ((ref->u.c.component->ts.type == BT_CLASS
-//	     && !CLASS_DATA (ref->u.c.component)->attr.codimension
-//	     && (CLASS_DATA (ref->u.c.component)->attr.pointer
-//		 || CLASS_DATA (ref->u.c.component)->attr.allocatable))
-//	    || (ref->u.c.component->ts.type != BT_CLASS
-//		&& !ref->u.c.component->attr.codimension
-//		&& (ref->u.c.component->attr.pointer
-//		    || ref->u.c.component->attr.allocatable)))
-//	  gfc_error ("Sorry, coindexed access to a pointer or allocatable "
-//		     "component of the coindexed coarray at %L is not yet "
-//		     "supported", &expr->where);
-//      }
-//  if ((!comp_ref
-//       && ((expr->symtree->n.sym->ts.type == BT_CLASS
-//	    && CLASS_DATA (expr->symtree->n.sym)->attr.alloc_comp)
-//	   || (expr->symtree->n.sym->ts.type == BT_DERIVED
-//	       && expr->symtree->n.sym->ts.u.derived->attr.alloc_comp)))
-//      || (comp_ref
-//	  && ((comp_ref->u.c.component->ts.type == BT_CLASS
-//	       && CLASS_DATA (comp_ref->u.c.component)->attr.alloc_comp)
-//	      || (comp_ref->u.c.component->ts.type == BT_DERIVED
-//		  && comp_ref->u.c.component->ts.u.derived->attr.alloc_comp))))
-//    gfc_error ("Sorry, coindexed coarray at %L with allocatable component is "
-//	       "not yet supported", &expr->where);
+  if (expr->symtree->n.sym->ts.type == BT_CLASS
+      && UNLIMITED_POLY (expr->symtree->n.sym)
+      && CLASS_DATA (expr->symtree->n.sym)->attr.codimension)
+    gfc_error ("Sorry, coindexed access to an unlimited polymorphic object at "
+	       "%L is not supported", &expr->where);
 
-  if (expr->rank)
-    {
-      /* Without the new array descriptor, access like "caf[i]%a(:)%b" is in
-	 general not possible as the required stride multiplier might be not
-	 a multiple of c_sizeof(b). In case of noncoindexed access, the
-	 scalarizer often takes care of it - for coarrays, it always fails.  */
-      for (ref = expr->ref; ref; ref = ref->next)
-        if (ref->type == REF_COMPONENT
-	    && ((ref->u.c.component->ts.type == BT_CLASS
-		 && CLASS_DATA (ref->u.c.component)->attr.codimension)
-	        || (ref->u.c.component->ts.type != BT_CLASS
-		    && ref->u.c.component->attr.codimension)))
-	  break;
-      if (ref == NULL)
-	ref = expr->ref;
-      /* Skip to the coref including the coref and only that.  */
-      for ( ; ref; ref = ref->next)
-	if (ref->type == REF_ARRAY && ref->u.ar.codimen)
-	  {
-	    ref = ref->next;
-	    break;
-	  }
-      for ( ; ref; ref = ref->next)
-	if (ref->type == REF_COMPONENT)
-	  {
-	    if (ref->u.c.component->attr.allocatable)
-	      break;
-	    else
-	      gfc_error ("Sorry, coindexed access at %L to "
-			 "a non-allocatable component with an array "
-			 "part-ref is not yet supported",
-			 &expr->where);
-	  }
-    }
+  for (ref = expr->ref; ref; ref = ref->next)
+    if (ref->type == REF_COMPONENT)
+      {
+	if (ref->u.c.component->ts.type == BT_CLASS
+	    && UNLIMITED_POLY (ref->u.c.component)
+	    && CLASS_DATA (ref->u.c.component)->attr.codimension)
+	  gfc_error ("Sorry, coindexed access to an unlimited polymorphic "
+		     "component at %L is not supported", &expr->where);
+      }
 
   caf_decl = expr->symtree->n.sym->backend_decl;
   gcc_assert (caf_decl);
   if (expr->symtree->n.sym->ts.type == BT_CLASS)
-    for (ref = expr->ref; ref; ref = ref->next)
-      {
-	if (ref->type == REF_COMPONENT
-	    && strcmp (ref->u.c.component->name, "_data") != 0)
-	  {
-	    caf_decl = gfc_class_data_get (caf_decl);
-	    if (CLASS_DATA (expr->symtree->n.sym)->attr.codimension)
-	      return caf_decl;
+    {
+      if (expr->ref && expr->ref->type == REF_ARRAY)
+	{
+	  caf_decl = gfc_class_data_get (caf_decl);
+	  if (CLASS_DATA (expr->symtree->n.sym)->attr.codimension)
+	    return caf_decl;
+	}
+      for (ref = expr->ref; ref; ref = ref->next)
+	{
+	  if (ref->type == REF_COMPONENT
+	      && strcmp (ref->u.c.component->name, "_data") != 0)
+	    {
+	      caf_decl = gfc_class_data_get (caf_decl);
+	      if (CLASS_DATA (expr->symtree->n.sym)->attr.codimension)
+		return caf_decl;
+	      break;
+	    }
+	  else if (ref->type == REF_ARRAY && ref->u.ar.dimen)
 	    break;
-	  }
-	else if (ref->type == REF_ARRAY && ref->u.ar.dimen)
-	  break;
-      }
+	}
+    }
   if (expr->symtree->n.sym->attr.codimension)
     return caf_decl;
 

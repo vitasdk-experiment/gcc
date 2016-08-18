@@ -56,10 +56,10 @@ integer :: x(10)
 type(t2) :: y
 
 x(1) = caf(2)[4]%b ! OK
-x(:) = caf(:)[4]%b ! { dg-error "Sorry, coindexed access at \\(1\\) to a non-allocatable component with an array part-ref is not yet supported" }
+x(:) = caf(:)[4]%b ! OK now
 
 x(1) = y%caf2(2)[4]%b ! OK
-x(:) = y%caf2(:)[4]%b ! { dg-error "Sorry, coindexed access at \\(1\\) to a non-allocatable component with an array part-ref is not yet supported" }
+x(:) = y%caf2(:)[4]%b ! OK now
 end subroutine three
 
 subroutine four
@@ -117,10 +117,10 @@ integer :: x(10)
 type(t2) :: y
 
 x(1) = caf(2)[4]%b ! OK
-x(:) = caf(:)[4]%b ! { dg-error "Sorry, coindexed access at \\(1\\) to a non-allocatable component with an array part-ref is not yet supported" }
+x(:) = caf(:)[4]%b ! OK now
 
 x(1) = y%caf2(2)[4]%b ! OK
-x(:) = y%caf2(:)[4]%b ! { dg-error "Sorry, coindexed access at \\(1\\) to a non-allocatable component with an array part-ref is not yet supported" }
+x(:) = y%caf2(:)[4]%b ! OK now
 end subroutine six
 
 call one()

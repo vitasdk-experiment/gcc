@@ -95,8 +95,10 @@ typedef enum caf_ref_type_t {
      allocatable or pointer type.  For regular ones idx in caf_reference_t is
      set to -1.  */
   CAF_REF_COMPONENT,
-  /* Reference an array.  */
-  CAF_REF_ARRAY
+  /* Reference an allocatable array.  */
+  CAF_REF_ARRAY,
+  /* Reference a non-allocatable/non-pointer array.  */
+  CAF_REF_STATIC_ARRAY
 } caf_ref_type_t;
 
 typedef enum caf_array_ref_t {

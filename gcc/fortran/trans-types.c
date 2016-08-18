@@ -2689,8 +2689,10 @@ gfc_get_derived_type (gfc_symbol * derived, bool in_coarray)
       if (!c->backend_decl)
 	c->backend_decl = field;
 
-      if (c->ts.type != BT_CLASS && !c->attr.dimension && !c->attr.codimension
-	  && c->attr.allocatable && c->caf_token == NULL_TREE)
+      /* Do not add a caf_token field for classes' data components.  */
+      if (in_coarray && !c->attr.dimension && !c->attr.codimension
+	  && c->attr.allocatable && c->caf_token == NULL_TREE
+	  && strcmp("_data", c->name) != 0)
 	{
 	  char caf_name[GFC_MAX_SYMBOL_LEN];
 	  snprintf (caf_name, GFC_MAX_SYMBOL_LEN, "_caf_%s", c->name);

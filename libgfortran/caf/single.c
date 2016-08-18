@@ -1178,7 +1178,8 @@ copy_data (void *ds, void *sr, gfc_descriptor_t *dst, gfc_descriptor_t *src,
 	   size_t num, int *stat)
 {
   size_t k;
-  if ((src == NULL || GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src))
+  if ((src == NULL || dst == NULL
+       ||GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src))
       && dst_kind == src_kind)
     {
       memmove (ds, sr, (dst_size > src_size ? src_size : dst_size) * num);
@@ -1213,7 +1214,7 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 	     int dst_kind, int src_kind, size_t dst_dim, size_t src_dim,
 	     size_t num, int *stat)
 {
-  ptrdiff_t extent_src = 1, array_offset_src = 0;
+  ptrdiff_t extent_src = 1, array_offset_src = 0, stride_src;
 
   if (unlikely (ref == NULL))
     /* May be we should issue an error here, because this case should not
@@ -1239,6 +1240,9 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 		       dst_kind, src_kind, dst_size, ref->item_size, 1, stat);
 	  ++(*i);
 	  return;
+	case CAF_REF_STATIC_ARRAY:
+	  src = NULL;
+	  /* Intentionally fall through.  */
 	case CAF_REF_ARRAY:
 	  if (ref->u.a.mode[src_dim] == CAF_ARR_REF_NONE)
 	    {
@@ -1250,15 +1254,7 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 	      *i += num;
 	      return;
 	    }
-	  else
-	    {
-	      /* Only when on the left most index switch the data pointer to
-		 the array's data pointer.  */
-	      if (src_dim == 0)
-		sr = GFC_DESCRIPTOR_DATA (src);
-
-	      break;
-	    }
+	  break;
 	default:
 	  caf_runtime_error(unreachable);
 	}
@@ -1283,10 +1279,14 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
       if (ref->u.a.mode[src_dim] == CAF_ARR_REF_NONE)
 	{
 	  get_for_ref (ref->next, i, dst_index, single_token, dst,
-		       (gfc_descriptor_t *)sr, ds, sr, dst_kind, src_kind,
+		       /*(gfc_descriptor_t *)*/src, ds, sr, dst_kind, src_kind,
 		       dst_dim, 0, 1, stat);
 	  return;
 	}
+      /* Only when on the left most index switch the data pointer to
+	     the array's data pointer.  And only for non-static arrays.  */
+      if (src_dim == 0 && ref->type != CAF_REF_STATIC_ARRAY)
+	sr = GFC_DESCRIPTOR_DATA (src);
       switch (ref->u.a.mode[src_dim])
 	{
 	case CAF_ARR_REF_VECTOR:
@@ -1296,11 +1296,11 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 	  for (size_t idx = 0; idx < ref->u.a.dim[src_dim].v.nvec;
 	       ++idx)
 	    {
-#define KINDCASE(kind, type) case kind:                                      \
-	      array_offset_src = (((index_type)                      \
-		  ((type *)ref->u.a.dim[src_dim].v.vector)[idx])     \
-		  - GFC_DIMENSION_LBOUND (src->dim[src_dim]))        \
-		  * GFC_DIMENSION_STRIDE (src->dim[src_dim]);        \
+#define KINDCASE(kind, type) case kind: \
+	      array_offset_src = (((index_type) \
+		  ((type *)ref->u.a.dim[src_dim].v.vector)[idx]) \
+		  - GFC_DIMENSION_LBOUND (src->dim[src_dim])) \
+		  * GFC_DIMENSION_STRIDE (src->dim[src_dim]); \
 	      break
 
 	      switch (ref->u.a.dim[src_dim].v.kind)
@@ -1329,16 +1329,14 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 	    }
 	  return;
 	case CAF_ARR_REF_FULL:
-//		  if (src->dim[dim]._stride == 1)
-//		    {
-	      /* Contiguous data can be copied faster.  */
-//		    }
-
-	  extent_src = GFC_DIMENSION_EXTENT (src->dim[src_dim]);
+	  extent_src = GFC_DIMENSION_EXTENT (src->dim[src_dim])
+	      / ref->u.a.dim[src_dim].s.stride;
+	  stride_src = src->dim[src_dim]._stride
+	      * ref->u.a.dim[src_dim].s.stride;
 	  array_offset_src = 0;
 	  dst_index[dst_dim] = 0;
 	  for (index_type idx = 0; idx < extent_src;
-	       ++idx, array_offset_src += src->dim[src_dim]._stride)
+	       ++idx, array_offset_src += stride_src)
 	    {
 	      get_for_ref (ref, i, dst_index, single_token, dst, src,
 			   ds, sr + array_offset_src * ref->item_size,
@@ -1352,25 +1350,28 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 	  extent_src = (ref->u.a.dim[src_dim].s.end
 			- ref->u.a.dim[src_dim].s.start)
 	      / ref->u.a.dim[src_dim].s.stride + 1;
-	  array_offset_src = ref->u.a.dim[src_dim].s.start
-	      - GFC_DIMENSION_LBOUND (src->dim[src_dim]);
+	  array_offset_src = (ref->u.a.dim[src_dim].s.start
+			      - GFC_DIMENSION_LBOUND (src->dim[src_dim]))
+	      * GFC_DIMENSION_STRIDE (src->dim[src_dim]);
+	  stride_src = GFC_DIMENSION_STRIDE (src->dim[src_dim])
+	      * ref->u.a.dim[src_dim].s.stride;
 	  dst_index[dst_dim] = 0;
 	  for (index_type idx = 0; idx < extent_src; ++idx)
 	    {
 	      get_for_ref (ref, i, dst_index, single_token, dst, src,
-			   ds, sr + array_offset_src * ref->item_size
-			   * GFC_DIMENSION_STRIDE (src->dim[src_dim]),
+			   ds, sr + array_offset_src * ref->item_size,
 			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
 			   1, stat);
 	      dst_index[dst_dim] +=
 		  GFC_DIMENSION_STRIDE (dst->dim[dst_dim]);
-	      array_offset_src += ref->u.a.dim[src_dim].s.stride;
+	      array_offset_src += stride_src;
 	    }
 	  return;
 	case CAF_ARR_REF_SINGLE:
 	  array_offset_src = (ref->u.a.dim[src_dim].s.start
-			       - src->dim[src_dim].lower_bound)
-			     * GFC_DIMENSION_STRIDE (src->dim[src_dim]);
+			      - src->dim[src_dim].lower_bound)
+	      * GFC_DIMENSION_STRIDE (src->dim[src_dim]);
+	  dst_index[dst_dim] = 0;
 	  get_for_ref (ref, i, dst_index, single_token, dst, src, ds,
 		       sr + array_offset_src * ref->item_size,
 		       dst_kind, src_kind, dst_dim, src_dim + 1, 1,
@@ -1380,32 +1381,115 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 	  extent_src = (GFC_DIMENSION_UBOUND (src->dim[src_dim])
 			- ref->u.a.dim[src_dim].s.start)
 	      / ref->u.a.dim[src_dim].s.stride + 1;
-	  array_offset_src = ref->u.a.dim[src_dim].s.start
-	      - GFC_DIMENSION_LBOUND (src->dim[src_dim]);
+	  stride_src = GFC_DIMENSION_STRIDE (src->dim[src_dim])
+	      * ref->u.a.dim[src_dim].s.stride;
+	  array_offset_src = (ref->u.a.dim[src_dim].s.start
+			      - GFC_DIMENSION_LBOUND (src->dim[src_dim]))
+	      * GFC_DIMENSION_STRIDE (src->dim[src_dim]);
 	  dst_index[dst_dim] = 0;
 	  for (index_type idx = 0; idx < extent_src; ++idx)
 	    {
 	      get_for_ref (ref, i, dst_index, single_token, dst, src,
-			   ds, sr + array_offset_src * ref->item_size
-			   * GFC_DIMENSION_STRIDE (src->dim[src_dim]),
+			   ds, sr + array_offset_src * ref->item_size,
 			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
 			   1, stat);
 	      dst_index[dst_dim] +=
 		  GFC_DIMENSION_STRIDE (dst->dim[dst_dim]);
-	      array_offset_src += ref->u.a.dim[src_dim].s.stride;
+	      array_offset_src += stride_src;
 	    }
 	  return;
 	case CAF_ARR_REF_OPEN_START:
 	  extent_src = (ref->u.a.dim[src_dim].s.end
-			- GFC_DIMENSION_LBOUND (src->dim[src_dim]))
+	      - GFC_DIMENSION_LBOUND (src->dim[src_dim]))
 	      / ref->u.a.dim[src_dim].s.stride + 1;
+	  stride_src = GFC_DIMENSION_STRIDE (src->dim[src_dim])
+	      * ref->u.a.dim[src_dim].s.stride;
 	  array_offset_src = 0;
 	  dst_index[dst_dim] = 0;
 	  for (index_type idx = 0; idx < extent_src; ++idx)
 	    {
 	      get_for_ref (ref, i, dst_index, single_token, dst, src,
-			   ds, sr + array_offset_src * ref->item_size
-			   * GFC_DIMENSION_STRIDE (src->dim[src_dim]),
+			   ds, sr + array_offset_src * ref->item_size,
+			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
+			   1, stat);
+	      dst_index[dst_dim] +=
+		  GFC_DIMENSION_STRIDE (dst->dim[dst_dim]);
+	      array_offset_src += stride_src;
+	    }
+	  return;
+	default:
+	  caf_runtime_error(unreachable);
+	}
+      return;
+    case CAF_REF_STATIC_ARRAY:
+      if (ref->u.a.mode[src_dim] == CAF_ARR_REF_NONE)
+	{
+	  get_for_ref (ref->next, i, dst_index, single_token, dst,
+		       NULL, ds, sr, dst_kind, src_kind,
+		       dst_dim, 0, 1, stat);
+	  return;
+	}
+      switch (ref->u.a.mode[src_dim])
+	{
+	case CAF_ARR_REF_VECTOR:
+	  array_offset_src = 0;
+	  dst_index[dst_dim] = 0;
+	  for (size_t idx = 0; idx < ref->u.a.dim[src_dim].v.nvec;
+	       ++idx)
+	    {
+#define KINDCASE(kind, type) case kind: \
+	      array_offset_src = ((type *)ref->u.a.dim[src_dim].v.vector)[idx]; \
+	      break
+
+	      switch (ref->u.a.dim[src_dim].v.kind)
+		{
+		KINDCASE (1, GFC_INTEGER_1);
+		KINDCASE (2, GFC_INTEGER_2);
+		KINDCASE (4, GFC_INTEGER_4);
+#ifdef HAVE_GFC_INTEGER_8
+		KINDCASE (8, GFC_INTEGER_8);
+#endif
+#ifdef HAVE_GFC_INTEGER_16
+		KINDCASE (16, GFC_INTEGER_16);
+#endif
+		default:
+		  caf_runtime_error (unreachable);
+		  return;
+		}
+#undef KINDCASE
+
+	      get_for_ref (ref, i, dst_index, single_token, dst, NULL,
+			   ds, sr + array_offset_src * ref->item_size,
+			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
+			   1, stat);
+	      dst_index[dst_dim] +=
+		  GFC_DIMENSION_STRIDE (dst->dim[dst_dim]);
+	    }
+	  return;
+	case CAF_ARR_REF_FULL:
+	  dst_index[dst_dim] = 0;
+	  for (array_offset_src = 0 ;
+	       array_offset_src <= ref->u.a.dim[src_dim].s.end;
+	       array_offset_src += ref->u.a.dim[src_dim].s.stride)
+	    {
+	      get_for_ref (ref, i, dst_index, single_token, dst, NULL,
+			   ds, sr + array_offset_src * ref->item_size,
+			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
+			   1, stat);
+	      dst_index[dst_dim] +=
+		  GFC_DIMENSION_STRIDE (dst->dim[dst_dim]);
+	    }
+	  return;
+	case CAF_ARR_REF_RANGE:
+	  extent_src = (ref->u.a.dim[src_dim].s.end
+			- ref->u.a.dim[src_dim].s.start)
+	      / ref->u.a.dim[src_dim].s.stride + 1;
+	  array_offset_src = ref->u.a.dim[src_dim].s.start;
+	  dst_index[dst_dim] = 0;
+	  for (index_type idx = 0; idx < extent_src; ++idx)
+	    {
+	      get_for_ref (ref, i, dst_index, single_token, dst, NULL,
+			   ds, sr + array_offset_src * ref->item_size,
 			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
 			   1, stat);
 	      dst_index[dst_dim] +=
@@ -1413,6 +1497,16 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 	      array_offset_src += ref->u.a.dim[src_dim].s.stride;
 	    }
 	  return;
+	case CAF_ARR_REF_SINGLE:
+	  array_offset_src = ref->u.a.dim[src_dim].s.start;
+	  get_for_ref (ref, i, dst_index, single_token, dst, NULL, ds,
+		       sr + array_offset_src * ref->item_size,
+		       dst_kind, src_kind, dst_dim, src_dim + 1, 1,
+		       stat);
+	  return;
+	/* The OPEN_* are mapped to a RANGE and therefore can not occur.  */
+	case CAF_ARR_REF_OPEN_END:
+	case CAF_ARR_REF_OPEN_START:
 	default:
 	  caf_runtime_error(unreachable);
 	}
@@ -1488,7 +1582,6 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 	    }
 	  break;
 	case CAF_REF_ARRAY:
-//	  memptr = GFC_DESCRIPTOR_DATA (src);
 	  for (i = 0; riter->u.a.mode[i] != CAF_ARR_REF_NONE; ++i)
 	    {
 	      switch (riter->u.a.mode[i])
@@ -1521,7 +1614,8 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 #undef KINDCASE
 		  break;
 		case CAF_ARR_REF_FULL:
-		  delta = (src->dim[i]._ubound - src->dim[i].lower_bound + 1);
+		  delta = (src->dim[i]._ubound - src->dim[i].lower_bound + 1)
+		      / riter->u.a.dim[i].s.stride;
 		  /* The memptr stays unchanged when ref'ing the first element
 		     in a dimension.  */
 		  break;
@@ -1554,6 +1648,97 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		  /* The memptr stays unchanged when ref'ing the first element
 		     in a dimension.  */
 		  break;
+		default:
+		  caf_internal_error (unknownarrreftype, stat, NULL, 0);
+		  return;
+		}
+	      if (delta <= 0)
+		return;
+	      if (delta != 1)
+		{
+		  /* Non-scalar dimension.  */
+		  if (unlikely (dst_cur_dim >= dst_rank))
+		    {
+		      caf_internal_error (rankoutofrange, stat, NULL, 0);
+		      return;
+		    }
+		  if (realloc_required || realloc_needed
+		      || GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim) != delta)
+		    {
+		      if (unlikely (!dst_reallocatable))
+			{
+			  caf_internal_error (nonallocextentmismatch, stat,
+					      NULL, 0, delta,
+				      GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim));
+			  return;
+			}
+		      else if (! dst_reallocatable
+			       && GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim)
+				  != delta)
+			{
+			  caf_internal_error (extentoutofrange, stat, NULL, 0);
+			  return;
+			}
+		      realloc_needed = true;
+		      GFC_DIMENSION_SET (dst->dim[dst_cur_dim], 1, delta, size);
+		    }
+		  ++dst_cur_dim;
+		}
+	      size *= (index_type)delta;
+	    }
+	  break;
+	case CAF_REF_STATIC_ARRAY:
+	  for (i = 0; riter->u.a.mode[i] != CAF_ARR_REF_NONE; ++i)
+	    {
+	      switch (riter->u.a.mode[i])
+		{
+		case CAF_ARR_REF_VECTOR:
+		  delta = riter->u.a.dim[i].v.nvec;
+#define KINDCASE(kind, type) case kind: \
+		    memptr += ((type *)riter->u.a.dim[i].v.vector)[0] \
+			* riter->item_size; \
+		    break
+
+		  switch (riter->u.a.dim[i].v.kind)
+		    {
+		    KINDCASE (1, GFC_INTEGER_1);
+		    KINDCASE (2, GFC_INTEGER_2);
+		    KINDCASE (4, GFC_INTEGER_4);
+#ifdef HAVE_GFC_INTEGER_8
+		    KINDCASE (8, GFC_INTEGER_8);
+#endif
+#ifdef HAVE_GFC_INTEGER_16
+		    KINDCASE (16, GFC_INTEGER_16);
+#endif
+		    default:
+		      caf_internal_error (vecrefunknownkind, stat, NULL, 0);
+		      return;
+		    }
+#undef KINDCASE
+		  break;
+		case CAF_ARR_REF_FULL:
+		  delta = riter->u.a.dim[i].s.end / riter->u.a.dim[i].s.stride
+		      + 1;
+		  /* The memptr stays unchanged when ref'ing the first element
+		     in a dimension.  */
+		  break;
+		case CAF_ARR_REF_RANGE:
+		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start)
+		      / riter->u.a.dim[i].s.stride + 1;
+		  memptr += riter->u.a.dim[i].s.start
+		      * riter->u.a.dim[i].s.stride
+		      * riter->item_size;
+		  break;
+		case CAF_ARR_REF_SINGLE:
+		  delta = 1;
+		  memptr += riter->u.a.dim[i].s.start
+		      * riter->u.a.dim[i].s.stride
+		      * riter->item_size;
+		  break;
+		case CAF_ARR_REF_OPEN_END:
+		  /* This and OPEN_START are mapped to a RANGE and therefore
+		     can not occur here.  */
+		case CAF_ARR_REF_OPEN_START:
 		default:
 		  caf_internal_error (unknownarrreftype, stat, NULL, 0);
 		  return;
@@ -1801,23 +1986,23 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 	  if (ref->u.a.mode[dst_dim] == CAF_ARR_REF_NONE)
 	    {
 	      size_t src_rank = GFC_DESCRIPTOR_RANK (src);
-	      for (size_t d = 0; d < src_rank; ++d)
-		array_offset_src += src_index[d];
-	      copy_data (ds, sr + array_offset_src * ref->item_size, dst, src,
-			 dst_kind, src_kind, ref->item_size, src_size, num,
-			 stat);
+	      if (src_rank > 0)
+		{
+		  for (size_t d = 0; d < src_rank; ++d)
+		    array_offset_src += src_index[d];
+		  copy_data (ds, sr + array_offset_src * ref->item_size, dst, src,
+			     dst_kind, src_kind, ref->item_size, src_size, num,
+			     stat);
+		}
+	      else
+		for (size_t d = 0; d < num; ++d)
+		  copy_data (ds + d * ref->item_size, sr, dst, src,
+			     dst_kind, src_kind, ref->item_size, src_size, 1,
+			     stat);
 	      *i += num;
 	      return;
 	    }
-	  else
-	    {
-	      /* Only when on the left most index switch the data pointer to
-		 the array's data pointer.  */
-	      if (dst_dim == 0)
-		ds = GFC_DESCRIPTOR_DATA (dst);
-
-	      break;
-	    }
+	  break;
 	default:
 	  caf_runtime_error(unreachable);
 	}
@@ -1839,8 +2024,6 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 	      /* Null the data-pointer to make register_component allocate
 		     its own memory.  */
 	      GFC_DESCRIPTOR_DATA (dst) = NULL;
-	      single_token = (caf_single_token_t)(calloc (1,
-					     sizeof (struct caf_single_token)));
 
 	      /* The size of the array is given by size.  */
 	      _gfortran_caf_register (size * ref->item_size,
@@ -1873,10 +2056,13 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 		       0, src_dim, 1, size, stat);
 	  return;
 	}
+      /* Only when on the left most index switch the data pointer to
+	     the array's data pointer.  And only for non-static arrays.  */
+      if (dst_dim == 0 && ref->type != CAF_REF_STATIC_ARRAY)
+	ds = GFC_DESCRIPTOR_DATA (dst);
       switch (ref->u.a.mode[dst_dim])
 	{
 	case CAF_ARR_REF_VECTOR:
-	  extent_dst = GFC_DIMENSION_EXTENT (dst->dim[dst_dim]);
 	  array_offset_dst = 0;
 	  src_index[src_dim] = 0;
 	  for (size_t idx = 0; idx < ref->u.a.dim[dst_dim].v.nvec;
@@ -1998,6 +2184,96 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 	  caf_runtime_error(unreachable);
 	}
       return;
+    case CAF_REF_STATIC_ARRAY:
+      if (ref->u.a.mode[dst_dim] == CAF_ARR_REF_NONE)
+	{
+	  send_by_ref (ref->next, i, src_index, single_token, NULL,
+		       src, ds, sr, dst_kind, src_kind,
+		       0, src_dim, 1, size, stat);
+	  return;
+	}
+      switch (ref->u.a.mode[dst_dim])
+	{
+	case CAF_ARR_REF_VECTOR:
+	  array_offset_dst = 0;
+	  src_index[src_dim] = 0;
+	  for (size_t idx = 0; idx < ref->u.a.dim[dst_dim].v.nvec;
+	       ++idx)
+	    {
+#define KINDCASE(kind, type) case kind: \
+	      array_offset_dst = ((type *)ref->u.a.dim[dst_dim].v.vector)[idx]; \
+	      break
+
+	      switch (ref->u.a.dim[dst_dim].v.kind)
+		{
+		KINDCASE (1, GFC_INTEGER_1);
+		KINDCASE (2, GFC_INTEGER_2);
+		KINDCASE (4, GFC_INTEGER_4);
+#ifdef HAVE_GFC_INTEGER_8
+		KINDCASE (8, GFC_INTEGER_8);
+#endif
+#ifdef HAVE_GFC_INTEGER_16
+		KINDCASE (16, GFC_INTEGER_16);
+#endif
+		default:
+		  caf_runtime_error (unreachable);
+		  return;
+		}
+#undef KINDCASE
+
+	      send_by_ref (ref, i, src_index, single_token, NULL, src,
+			   ds + array_offset_dst * ref->item_size, sr,
+			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
+			   1, size, stat);
+	      src_index[src_dim] +=
+		  GFC_DIMENSION_STRIDE (src->dim[src_dim]);
+	    }
+	  return;
+	case CAF_ARR_REF_FULL:
+	  src_index[src_dim] = 0;
+	  for (array_offset_dst = 0 ;
+	       array_offset_dst <= ref->u.a.dim[dst_dim].s.end;
+	       array_offset_dst += ref->u.a.dim[dst_dim].s.stride)
+	    {
+	      send_by_ref (ref, i, src_index, single_token, NULL, src,
+			   ds + array_offset_dst * ref->item_size, sr,
+			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
+			   1, size, stat);
+	      src_index[src_dim] +=
+		  GFC_DIMENSION_STRIDE (src->dim[src_dim]);
+	    }
+	  return;
+	case CAF_ARR_REF_RANGE:
+	  extent_dst = (ref->u.a.dim[dst_dim].s.end
+			- ref->u.a.dim[dst_dim].s.start)
+	      / ref->u.a.dim[dst_dim].s.stride + 1;
+	  array_offset_dst = ref->u.a.dim[dst_dim].s.start;
+	  src_index[src_dim] = 0;
+	  for (index_type idx = 0; idx < extent_dst; ++idx)
+	    {
+	      send_by_ref (ref, i, src_index, single_token, NULL, src,
+			   ds + array_offset_dst * ref->item_size, sr,
+			   dst_kind, src_kind, dst_dim + 1, src_dim + 1,
+			   1, size, stat);
+	      src_index[src_dim] +=
+		  GFC_DIMENSION_STRIDE (src->dim[src_dim]);
+	      array_offset_dst += ref->u.a.dim[dst_dim].s.stride;
+	    }
+	  return;
+	case CAF_ARR_REF_SINGLE:
+	  array_offset_dst = ref->u.a.dim[dst_dim].s.start;
+	  send_by_ref (ref, i, src_index, single_token, NULL, src,
+		       ds + array_offset_dst * ref->item_size, sr,
+		       dst_kind, src_kind, dst_dim + 1, src_dim, 1,
+		       size, stat);
+	  return;
+	/* The OPEN_* are mapped to a RANGE and therefore can not occur.  */
+	case CAF_ARR_REF_OPEN_END:
+	case CAF_ARR_REF_OPEN_START:
+	default:
+	  caf_runtime_error(unreachable);
+	}
+      return;
     default:
       caf_runtime_error(unreachable);
     }
@@ -2011,6 +2287,8 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 			   int dst_kind, int src_kind, bool may_require_tmp,
 			   bool dst_reallocatable, int *stat)
 {
+  const char vecrefunknownkind[] = "libcaf_single::caf_get_by_ref(): "
+				   "unknown kind in vector-ref.\n";
   const char unknownreftype[] = "libcaf_single::caf_send_by_ref(): "
 				"unknown reference type.\n";
   const char unknownarrreftype[] = "libcaf_single::caf_send_by_ref(): "
@@ -2040,15 +2318,6 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 
   if (stat)
     *stat = 0;
-
-  /* The first ref has to be a component ref.  */
-  if (refs->type != CAF_REF_COMPONENT)
-    {
-      const char firstneedstobecompref[] = "libcaf_single::caf_send_by_ref(): "
-	"first ref needs to be a component ref.\n";
-      caf_internal_error (firstneedstobecompref, stat, NULL, 0);
-      return;
-    }
 
   /* Compute the size of the result.  In the beginning size just counts the
      number of elements.  */
@@ -2097,6 +2366,10 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 	    }
 	  break;
 	case CAF_REF_ARRAY:
+	  if (dst != NULL)
+	    memptr = GFC_DESCRIPTOR_DATA (dst);
+	  else
+	    dst = src;
 	  /* When the dst array needs to be allocated, then look at the
 	     extent of the source array in the dimension dst_cur_dim.  */
 	  for (i = 0; riter->u.a.mode[i] != CAF_ARR_REF_NONE; ++i)
@@ -2105,6 +2378,30 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		{
 		case CAF_ARR_REF_VECTOR:
 		  delta = riter->u.a.dim[i].v.nvec;
+#define KINDCASE(kind, type) case kind: \
+		    memptr += (((index_type) \
+			((type *)riter->u.a.dim[i].v.vector)[0]) \
+			- GFC_DIMENSION_LBOUND (dst->dim[i])) \
+			* GFC_DIMENSION_STRIDE (dst->dim[i]) \
+			* riter->item_size; \
+		    break
+
+		  switch (riter->u.a.dim[i].v.kind)
+		    {
+		    KINDCASE (1, GFC_INTEGER_1);
+		    KINDCASE (2, GFC_INTEGER_2);
+		    KINDCASE (4, GFC_INTEGER_4);
+#ifdef HAVE_GFC_INTEGER_8
+		    KINDCASE (8, GFC_INTEGER_8);
+#endif
+#ifdef HAVE_GFC_INTEGER_16
+		    KINDCASE (16, GFC_INTEGER_16);
+#endif
+		    default:
+		      caf_internal_error (vecrefunknownkind, stat, NULL, 0);
+		      return;
+		    }
+#undef KINDCASE
 		  break;
 		case CAF_ARR_REF_FULL:
 		  if (dst)
@@ -2115,9 +2412,17 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		case CAF_ARR_REF_RANGE:
 		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start)
 		      / riter->u.a.dim[i].s.stride + 1;
+		  memptr += (riter->u.a.dim[i].s.start
+			     - dst->dim[i].lower_bound)
+		      * GFC_DIMENSION_STRIDE (dst->dim[i])
+		      * riter->item_size;
 		  break;
 		case CAF_ARR_REF_SINGLE:
 		  delta = 1;
+		  memptr += (riter->u.a.dim[i].s.start
+			     - dst->dim[i].lower_bound)
+		      * GFC_DIMENSION_STRIDE (dst->dim[i])
+		      * riter->item_size;
 		  break;
 		case CAF_ARR_REF_OPEN_END:
 		  if (dst)
@@ -2127,6 +2432,10 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		    delta = (src->dim[src_cur_dim]._ubound
 			     - riter->u.a.dim[i].s.start)
 			/ riter->u.a.dim[i].s.stride + 1;
+		  memptr += (riter->u.a.dim[i].s.start
+			     - dst->dim[i].lower_bound)
+		      * GFC_DIMENSION_STRIDE (dst->dim[i])
+		      * riter->item_size;
 		  break;
 		case CAF_ARR_REF_OPEN_START:
 		  if (dst)
@@ -2136,12 +2445,107 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		    delta = (riter->u.a.dim[i].s.end
 			     - src->dim[src_cur_dim].lower_bound)
 			/ riter->u.a.dim[i].s.stride + 1;
+		  /* The memptr stays unchanged when ref'ing the first element
+		     in a dimension.  */
 		  break;
 		default:
 		  caf_internal_error (unknownarrreftype, stat, NULL, 0);
 		  return;
 		}
 
+	      if (delta <= 0)
+		return;
+	      if (delta != 1 && src_rank > 0)
+		{
+		  /* Non-scalar dimension.  */
+		  if (unlikely (src_cur_dim >= src_rank))
+		    {
+		      caf_internal_error (rankoutofrange, stat, NULL, 0);
+		      return;
+		    }
+		  if (dst && GFC_DESCRIPTOR_EXTENT (dst, src_cur_dim) != delta)
+		    {
+		      if (unlikely (!dst_reallocatable))
+			{
+			  caf_internal_error (nonallocextentmismatch, stat,
+					      NULL, 0);
+			}
+		      else if (riter->next != NULL)
+			{
+			  caf_internal_error (realloconinnerref, stat, NULL, 0);
+			  return;
+			}
+		      GFC_DIMENSION_SET (dst->dim[src_cur_dim], 1, delta, size);
+		    }
+		  else if (!dst)
+		    {
+		      if (!dst_reallocatable)
+			{
+			  caf_internal_error (cannotallocdst, stat, NULL, 0);
+			  return;
+			}
+		    }
+		  ++src_cur_dim;
+		}
+	      size *= (index_type)delta;
+	    }
+	  break;
+	case CAF_REF_STATIC_ARRAY:
+	  for (i = 0; riter->u.a.mode[i] != CAF_ARR_REF_NONE; ++i)
+	    {
+	      switch (riter->u.a.mode[i])
+		{
+		case CAF_ARR_REF_VECTOR:
+		  delta = riter->u.a.dim[i].v.nvec;
+#define KINDCASE(kind, type) case kind: \
+		    memptr += ((type *)riter->u.a.dim[i].v.vector)[0] \
+			* riter->item_size; \
+		    break
+
+		  switch (riter->u.a.dim[i].v.kind)
+		    {
+		    KINDCASE (1, GFC_INTEGER_1);
+		    KINDCASE (2, GFC_INTEGER_2);
+		    KINDCASE (4, GFC_INTEGER_4);
+#ifdef HAVE_GFC_INTEGER_8
+		    KINDCASE (8, GFC_INTEGER_8);
+#endif
+#ifdef HAVE_GFC_INTEGER_16
+		    KINDCASE (16, GFC_INTEGER_16);
+#endif
+		    default:
+		      caf_internal_error (vecrefunknownkind, stat, NULL, 0);
+		      return;
+		    }
+#undef KINDCASE
+		  break;
+		case CAF_ARR_REF_FULL:
+		  delta = riter->u.a.dim[i].s.end / riter->u.a.dim[i].s.stride
+		      + 1;
+		  /* The memptr stays unchanged when ref'ing the first element
+		     in a dimension.  */
+		  break;
+		case CAF_ARR_REF_RANGE:
+		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start)
+		      / riter->u.a.dim[i].s.stride + 1;
+		  memptr += riter->u.a.dim[i].s.start
+		      * riter->u.a.dim[i].s.stride
+		      * riter->item_size;
+		  break;
+		case CAF_ARR_REF_SINGLE:
+		  delta = 1;
+		  memptr += riter->u.a.dim[i].s.start
+		      * riter->u.a.dim[i].s.stride
+		      * riter->item_size;
+		  break;
+		case CAF_ARR_REF_OPEN_END:
+		  /* This and OPEN_START are mapped to a RANGE and therefore
+		     can not occur here.  */
+		case CAF_ARR_REF_OPEN_START:
+		default:
+		  caf_internal_error (unknownarrreftype, stat, NULL, 0);
+		  return;
+		}
 	      if (delta <= 0)
 		return;
 	      if (delta != 1)
@@ -2178,12 +2582,6 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		}
 	      size *= (index_type)delta;
 	    }
-	  /* For now take the first entry from the array to proceed in size
-	     calculation.
-	     TODO: Take the actually first reffed item of the array, because
-		   the first entry in the array may point to unallocated
-		   data.  */
-	  memptr = dst ? GFC_DESCRIPTOR_DATA (dst): NULL;
 	  break;
 	default:
 	  caf_internal_error (unknownreftype, stat, NULL, 0);

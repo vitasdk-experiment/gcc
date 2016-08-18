@@ -8996,7 +8996,7 @@ gfc_alloc_allocatable_for_assignment (gfc_loopinfo *loop,
 
   if (coarray)
     {
-      token = gfc_get_alloc_ptr_comps_caf_token (&caf_se, expr1);
+      token = gfc_get_ultimate_alloc_ptr_comps_caf_token (&caf_se, expr1);
       if (token == NULL_TREE)
 	{
 	  tmp = gfc_get_tree_for_caf_expr (expr1);

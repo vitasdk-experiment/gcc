@@ -820,9 +820,16 @@ gfc_allocate_allocatable (stmtblock_t * block, tree mem, tree size,
       gfc_se se;
       gfc_init_se (&se, NULL);
 
-      tree sub_caf_tree = gfc_get_alloc_ptr_comps_caf_token (&se, expr);
+      tree sub_caf_tree = gfc_get_ultimate_alloc_ptr_comps_caf_token (&se, expr);
       if (sub_caf_tree == NULL_TREE)
 	sub_caf_tree = token;
+
+      /* When mem is an array ref, then strip the .data-ref.  */
+      if (TREE_CODE (mem) == COMPONENT_REF
+	  && !(GFC_ARRAY_TYPE_P (TREE_TYPE (mem))))
+	tmp = TREE_OPERAND (mem, 0);
+      else
+	tmp = mem;
 
       if (!(GFC_ARRAY_TYPE_P (TREE_TYPE (tmp))
 	    && TYPE_LANG_SPECIFIC (TREE_TYPE (tmp))->corank == 0)
