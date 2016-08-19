@@ -3309,14 +3309,7 @@ gfc_check_assign (gfc_expr *lvalue, gfc_expr *rvalue, int conform)
      kind values can be converted into one another.  */
   if (lvalue->ts.type == BT_CHARACTER && rvalue->ts.type == BT_CHARACTER)
     {
-      /* Convert the kind only, when the kinds differ and this is not a
-	 coindexed expression.  Coindexed expression convert the kind
-	 implictly, but only when they are not array value.  */
-      if (lvalue->ts.kind != rvalue->ts.kind
-	  && (flag_coarray != GFC_FCOARRAY_LIB
-	      || (!gfc_is_coindexed (lvalue)
-		  && !gfc_is_coindexed (rvalue))
-	      || lvalue->rank != 0))
+      if (lvalue->ts.kind != rvalue->ts.kind)
 	gfc_convert_chartype (rvalue, &lvalue->ts);
 
       return true;
@@ -4456,24 +4449,13 @@ gfc_find_stat_co(gfc_expr *e)
 bool
 gfc_is_coindexed (gfc_expr *e)
 {
-  switch (e->expr_type)
-    {
-    case EXPR_FUNCTION:
-      return e->value.function.isym
-	  && e->value.function.isym->id == GFC_ISYM_CAF_GET;
-    case EXPR_VARIABLE:
-      {
-	gfc_ref *ref;
+  gfc_ref *ref;
 
-	for (ref = e->ref; ref; ref = ref->next)
-	  if (ref->type == REF_ARRAY && ref->u.ar.codimen > 0)
-	    return !gfc_ref_this_image (ref);
+  for (ref = e->ref; ref; ref = ref->next)
+    if (ref->type == REF_ARRAY && ref->u.ar.codimen > 0)
+      return !gfc_ref_this_image (ref);
 
-	return false;
-      }
-    default:
-      return false;
-    }
+  return false;
 }
 
 

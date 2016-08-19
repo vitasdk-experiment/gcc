@@ -1373,17 +1373,12 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 						   gfc_array_index_type,
 						   se.expr));
 			  /* Multiply with the stride.  */
-			  if (stride == NULL_TREE)
-			    se.expr = fold_build2 (MULT_EXPR,
-						   gfc_array_index_type,
-						   se.expr,
-						   gfc_conv_array_lbound(
-						     last_component_ref_tree,
-						     i));
-			  else
-			    se.expr = fold_build2 (MULT_EXPR,
-						   gfc_array_index_type,
-						   se.expr, stride);
+			  se.expr = fold_build2 (MULT_EXPR,
+						 gfc_array_index_type,
+						 se.expr,
+						 gfc_conv_array_stride(
+						   last_component_ref_tree,
+						   i));
 			}
 		      start = gfc_evaluate_now (fold_convert (
 						  gfc_array_index_type,
@@ -1605,14 +1600,18 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 	{
 	  if (lhs == NULL_TREE)
 	    {
+	      if (array_expr->ts.type == BT_CHARACTER)
+		gfc_init_se (&argse, NULL);
 	      if (array_expr->rank == 0)
 		{
 		  symbol_attribute attr;
 		  gfc_clear_attr (&attr);
 		  if (array_expr->ts.type == BT_CHARACTER)
-		    res_var = gfc_conv_string_tmp (se, build_pointer_type (type),
-						   array_expr->ts.u.cl->backend_decl);
-		  //					   argse.string_length);
+		    {
+		      res_var = gfc_conv_string_tmp (se, build_pointer_type (type),
+						     array_expr->ts.u.cl->backend_decl);
+		      argse.string_length = array_expr->ts.u.cl->backend_decl;
+		    }
 		  else
 		    res_var = gfc_create_var (type, "caf_res");
 		  dst_var = gfc_conv_scalar_to_descriptor (se, res_var, attr);
@@ -1629,6 +1628,8 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
 		  //		    se->loop->to[n] =
 		  //			gfc_conv_descriptor_ubound_get (argse.expr, gfc_rank_cst[n]);
 		  //		  }
+		  if (array_expr->ts.type == BT_CHARACTER)
+		    gfc_conv_expr_descriptor (&argse, array_expr);
 		  may_realloc = gfc_trans_create_temp_array (&se->pre, &se->post,
 							     se->ss, type,
 							     NULL_TREE, false,
@@ -1952,8 +1953,6 @@ conv_caf_send (gfc_code *code) {
       symbol_attribute attr;
       gfc_clear_attr (&attr);
       gfc_conv_expr (&rhs_se, rhs_expr);
-      if (!gfc_is_coindexed (rhs_expr) && rhs_expr->ts.type != BT_CHARACTER)
-	 rhs_se.expr = fold_convert (lhs_type , rhs_se.expr);
       rhs_se.expr = gfc_conv_scalar_to_descriptor (&rhs_se, rhs_se.expr, attr);
       rhs_se.expr = gfc_build_addr_expr (NULL_TREE, rhs_se.expr);
     }

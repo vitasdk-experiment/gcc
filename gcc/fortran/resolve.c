@@ -9743,8 +9743,6 @@ resolve_ordinary_assign (gfc_code *code, gfc_namespace *ns)
       return false;
     }
 
-  gfc_check_assign (lhs, rhs, 1);
-
   /* Assign the 'data' of a class object to a derived type.  */
   if (lhs->ts.type == BT_DERIVED
       && rhs->ts.type == BT_CLASS)
@@ -9784,6 +9782,8 @@ resolve_ordinary_assign (gfc_code *code, gfc_namespace *ns)
       code->expr1 = NULL;
       code->expr2 = NULL;
     }
+  else
+    gfc_check_assign (lhs, rhs, 1);
 
   return false;
 }

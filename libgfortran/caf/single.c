@@ -1517,6 +1517,12 @@ get_for_ref (caf_reference_t *ref, size_t *i, size_t *dst_index,
 }
 
 
+#define COMPUTE_DELTA(stride, lb, ub) \
+  abs_stride = (stride) > 0 ? (stride) : -(stride); \
+  delta = (stride) > 0 ? (ub) + 1 - (lb) : (lb) + 1 - (ub); \
+  if (delta <= 0) return; \
+  delta = (delta + abs_stride - 1) / abs_stride
+
 void
 _gfortran_caf_get_by_ref (caf_token_t token,
 			  int image_index __attribute__ ((unused)),
@@ -1537,7 +1543,7 @@ _gfortran_caf_get_by_ref (caf_token_t token,
   const char cannotallocdst[] = "libcaf_single::caf_get_by_ref(): "
 				"can not allocate memory.\n";
   const char nonallocextentmismatch[] = "libcaf_single::caf_get_by_ref(): "
-      "extent of non-allocatable array mismatch (%lu != %lu).\n";
+      "extent of non-allocatable arrays mismatch (%lu != %lu).\n";
   size_t size, i;
   size_t dst_index[GFC_MAX_DIMENSIONS];
   int dst_rank = GFC_DESCRIPTOR_RANK (dst);
@@ -1547,6 +1553,7 @@ _gfortran_caf_get_by_ref (caf_token_t token,
   void *memptr = single_token->memptr;
   gfc_descriptor_t *src = single_token->desc;
   caf_reference_t *riter = refs;
+  index_type abs_stride;
   long delta;
   /* Reallocation of dst.data is needed (e.g., array to small).  */
   bool realloc_needed;
@@ -1620,8 +1627,9 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		     in a dimension.  */
 		  break;
 		case CAF_ARR_REF_RANGE:
-		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start)
-		      / riter->u.a.dim[i].s.stride + 1;
+		  COMPUTE_DELTA (riter->u.a.dim[i].s.stride,
+				 riter->u.a.dim[i].s.start,
+				 riter->u.a.dim[i].s.end);
 		  memptr += (riter->u.a.dim[i].s.start
 			     - src->dim[i].lower_bound)
 		      * GFC_DIMENSION_STRIDE (src->dim[i])
@@ -1635,16 +1643,18 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		      * riter->item_size;
 		  break;
 		case CAF_ARR_REF_OPEN_END:
-		  delta = (src->dim[i]._ubound - riter->u.a.dim[i].s.start)
-		      / riter->u.a.dim[i].s.stride + 1;
+		  COMPUTE_DELTA (riter->u.a.dim[i].s.stride,
+				 riter->u.a.dim[i].s.start,
+				 src->dim[i]._ubound);
 		  memptr += (riter->u.a.dim[i].s.start
 			     - src->dim[i].lower_bound)
 		      * GFC_DIMENSION_STRIDE (src->dim[i])
 		      * riter->item_size;
 		  break;
 		case CAF_ARR_REF_OPEN_START:
-		  delta = (riter->u.a.dim[i].s.end - src->dim[i].lower_bound)
-		      / riter->u.a.dim[i].s.stride + 1;
+		  COMPUTE_DELTA (riter->u.a.dim[i].s.stride,
+				 src->dim[i].lower_bound,
+				 riter->u.a.dim[i].s.end);
 		  /* The memptr stays unchanged when ref'ing the first element
 		     in a dimension.  */
 		  break;
@@ -1654,16 +1664,16 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		}
 	      if (delta <= 0)
 		return;
-	      if (delta != 1)
+	      if (dst_rank > 0 || delta > 1)
 		{
-		  /* Non-scalar dimension.  */
-		  if (unlikely (dst_cur_dim >= dst_rank))
+		  if (dst_cur_dim >= dst_rank && delta != 1)
 		    {
 		      caf_internal_error (rankoutofrange, stat, NULL, 0);
 		      return;
 		    }
 		  if (realloc_required || realloc_needed
-		      || GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim) != delta)
+		      || (GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim) != delta
+			  && delta != 1))
 		    {
 		      if (unlikely (!dst_reallocatable))
 			{
@@ -1674,7 +1684,7 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 			}
 		      else if (! dst_reallocatable
 			       && GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim)
-				  != delta)
+			       != delta)
 			{
 			  caf_internal_error (extentoutofrange, stat, NULL, 0);
 			  return;
@@ -1682,7 +1692,10 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		      realloc_needed = true;
 		      GFC_DIMENSION_SET (dst->dim[dst_cur_dim], 1, delta, size);
 		    }
-		  ++dst_cur_dim;
+		  /* Increase the dim-counter of the dst only when the extent
+		     matches.  */
+		  if (GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim) == delta)
+		    ++dst_cur_dim;
 		}
 	      size *= (index_type)delta;
 	    }
@@ -1723,8 +1736,9 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		     in a dimension.  */
 		  break;
 		case CAF_ARR_REF_RANGE:
-		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start)
-		      / riter->u.a.dim[i].s.stride + 1;
+		  COMPUTE_DELTA (riter->u.a.dim[i].s.stride,
+				 riter->u.a.dim[i].s.start,
+				 riter->u.a.dim[i].s.end);
 		  memptr += riter->u.a.dim[i].s.start
 		      * riter->u.a.dim[i].s.stride
 		      * riter->item_size;
@@ -1745,27 +1759,27 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		}
 	      if (delta <= 0)
 		return;
-	      if (delta != 1)
+	      if (dst_rank > 0 || delta > 1)
 		{
-		  /* Non-scalar dimension.  */
-		  if (unlikely (dst_cur_dim >= dst_rank))
+		  if (dst_cur_dim >= dst_rank && delta != 1)
 		    {
 		      caf_internal_error (rankoutofrange, stat, NULL, 0);
 		      return;
 		    }
 		  if (realloc_required || realloc_needed
-		      || GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim) != delta)
+		      || (GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim) != delta
+			  && delta != 1))
 		    {
 		      if (unlikely (!dst_reallocatable))
 			{
 			  caf_internal_error (nonallocextentmismatch, stat,
 					      NULL, 0, delta,
-				      GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim));
+					      GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim));
 			  return;
 			}
 		      else if (! dst_reallocatable
 			       && GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim)
-				  != delta)
+			       != delta)
 			{
 			  caf_internal_error (extentoutofrange, stat, NULL, 0);
 			  return;
@@ -1773,7 +1787,10 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 		      realloc_needed = true;
 		      GFC_DIMENSION_SET (dst->dim[dst_cur_dim], 1, delta, size);
 		    }
-		  ++dst_cur_dim;
+		  /* Increase the dim-counter of the dst only when the extent
+		     matches.  */
+		  if (GFC_DESCRIPTOR_EXTENT (dst, dst_cur_dim) == delta)
+		    ++dst_cur_dim;
 		}
 	      size *= (index_type)delta;
 	    }
@@ -2410,6 +2427,11 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		    delta = GFC_DIMENSION_EXTENT (src->dim[src_cur_dim]);
 		  break;
 		case CAF_ARR_REF_RANGE:
+		  /* Special case check, when the stride is negative.  */
+		  if (riter->u.a.dim[i].s.stride < 0
+		      && riter->u.a.dim[i].s.end < riter->u.a.dim[i].s.start)
+		    /* Reference is empty.  */
+		    return;
 		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start)
 		      / riter->u.a.dim[i].s.stride + 1;
 		  memptr += (riter->u.a.dim[i].s.start
@@ -2426,12 +2448,27 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		  break;
 		case CAF_ARR_REF_OPEN_END:
 		  if (dst)
-		    delta = (dst->dim[i]._ubound - riter->u.a.dim[i].s.start)
-		        / riter->u.a.dim[i].s.stride + 1;
+		    {
+		      /* Special case check, when the stride is negative.  */
+		      if (riter->u.a.dim[i].s.stride < 0
+			  && dst->dim[i]._ubound < riter->u.a.dim[i].s.start)
+			/* Reference is empty.  */
+			return;
+		      delta = (dst->dim[i]._ubound - riter->u.a.dim[i].s.start)
+			  / riter->u.a.dim[i].s.stride + 1;
+		    }
 		  else
-		    delta = (src->dim[src_cur_dim]._ubound
-			     - riter->u.a.dim[i].s.start)
-			/ riter->u.a.dim[i].s.stride + 1;
+		    {
+		      /* Special case check, when the stride is negative.  */
+		      if (riter->u.a.dim[i].s.stride < 0
+			  && src->dim[src_cur_dim]._ubound
+			  < riter->u.a.dim[i].s.start)
+			/* Reference is empty.  */
+			return;
+		      delta = (src->dim[src_cur_dim]._ubound
+			       - riter->u.a.dim[i].s.start)
+			  / riter->u.a.dim[i].s.stride + 1;
+		    }
 		  memptr += (riter->u.a.dim[i].s.start
 			     - dst->dim[i].lower_bound)
 		      * GFC_DIMENSION_STRIDE (dst->dim[i])
@@ -2439,12 +2476,28 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		  break;
 		case CAF_ARR_REF_OPEN_START:
 		  if (dst)
-		    delta = (riter->u.a.dim[i].s.end - dst->dim[i].lower_bound)
-			/ riter->u.a.dim[i].s.stride + 1;
+		    {
+		      /* Special case check, when the stride is negative.  */
+		      if (riter->u.a.dim[i].s.stride < 0
+			  && riter->u.a.dim[i].s.end < dst->dim[i].lower_bound)
+			/* Reference is empty.  */
+			return;
+		      delta = (riter->u.a.dim[i].s.end
+			       - dst->dim[i].lower_bound)
+			  / riter->u.a.dim[i].s.stride + 1;
+		    }
 		  else
-		    delta = (riter->u.a.dim[i].s.end
-			     - src->dim[src_cur_dim].lower_bound)
-			/ riter->u.a.dim[i].s.stride + 1;
+		    {
+		      /* Special case check, when the stride is negative.  */
+		      if (riter->u.a.dim[i].s.stride < 0
+			  && riter->u.a.dim[i].s.end
+			  < src->dim[src_cur_dim].lower_bound)
+			/* Reference is empty.  */
+			return;
+		      delta = (riter->u.a.dim[i].s.end
+			       - src->dim[src_cur_dim].lower_bound)
+			  / riter->u.a.dim[i].s.stride + 1;
+		    }
 		  /* The memptr stays unchanged when ref'ing the first element
 		     in a dimension.  */
 		  break;
@@ -2455,15 +2508,15 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 
 	      if (delta <= 0)
 		return;
-	      if (delta != 1 && src_rank > 0)
+	      if (delta > 1 && src_rank > 0)
 		{
-		  /* Non-scalar dimension.  */
-		  if (unlikely (src_cur_dim >= src_rank))
+		  if (src_cur_dim >= src_rank && delta != 1)
 		    {
 		      caf_internal_error (rankoutofrange, stat, NULL, 0);
 		      return;
 		    }
-		  if (dst && GFC_DESCRIPTOR_EXTENT (dst, src_cur_dim) != delta)
+		  if (dst && GFC_DESCRIPTOR_EXTENT (dst, src_cur_dim) != delta
+		      && delta != 1)
 		    {
 		      if (unlikely (!dst_reallocatable))
 			{
@@ -2485,7 +2538,10 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 			  return;
 			}
 		    }
-		  ++src_cur_dim;
+		  /* Increase the dim-counter of the dst only when the extent
+		     matches.  */
+		  if (GFC_DESCRIPTOR_EXTENT (src, src_cur_dim) == delta)
+		    ++src_cur_dim;
 		}
 	      size *= (index_type)delta;
 	    }
@@ -2526,6 +2582,11 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		     in a dimension.  */
 		  break;
 		case CAF_ARR_REF_RANGE:
+		  /* Special case check, when the stride is negative.  */
+		  if (riter->u.a.dim[i].s.stride < 0
+		      && riter->u.a.dim[i].s.end < riter->u.a.dim[i].s.start)
+		    /* Reference is empty.  */
+		    return;
 		  delta = (riter->u.a.dim[i].s.end - riter->u.a.dim[i].s.start)
 		      / riter->u.a.dim[i].s.stride + 1;
 		  memptr += riter->u.a.dim[i].s.start
@@ -2548,15 +2609,15 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 		}
 	      if (delta <= 0)
 		return;
-	      if (delta != 1)
+	      if (delta > 1 && src_rank > 0)
 		{
-		  /* Non-scalar dimension.  */
-		  if (unlikely (src_cur_dim >= src_rank))
+		  if (src_cur_dim >= src_rank && delta != 1)
 		    {
 		      caf_internal_error (rankoutofrange, stat, NULL, 0);
 		      return;
 		    }
-		  if (dst && GFC_DESCRIPTOR_EXTENT (dst, src_cur_dim) != delta)
+		  if (dst && GFC_DESCRIPTOR_EXTENT (dst, src_cur_dim) != delta
+		      && delta != 1)
 		    {
 		      if (unlikely (!dst_reallocatable))
 			{
@@ -2578,7 +2639,10 @@ _gfortran_caf_send_by_ref (caf_token_t token,
 			  return;
 			}
 		    }
-		  ++src_cur_dim;
+		  /* Increase the dim-counter of the dst only when the extent
+		     matches.  */
+		  if (GFC_DESCRIPTOR_EXTENT (src, src_cur_dim) == delta)
+		    ++src_cur_dim;
 		}
 	      size *= (index_type)delta;
 	    }
