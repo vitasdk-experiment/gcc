@@ -211,7 +211,8 @@ void _gfortran_caf_send_by_ref (caf_token_t token, int image_index,
 void _gfortran_caf_sendget_by_ref (
 	caf_token_t dst_token, int dst_image_index, caf_reference_t *dst_refs,
 	caf_token_t src_token, int src_image_index, caf_reference_t *src_refs,
-	int dst_kind, int src_kind, bool may_require_tmp, int *stat);
+	int dst_kind, int src_kind, bool may_require_tmp, int *dst_stat,
+	int *src_stat);
 
 void _gfortran_caf_atomic_define (caf_token_t, size_t, int, void *, int *,
 				  int, int);

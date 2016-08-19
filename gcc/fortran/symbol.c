@@ -4960,39 +4960,3 @@ gfc_sym_get_dummy_args (gfc_symbol *sym)
 
   return dummies;
 }
-
-
-/* Get the symbol of type having the coarray.  */
-
-gfc_symbol *
-gfc_get_caf_type_symbol (gfc_expr *expr)
-{
-  gfc_symbol *derived;
-  bool coarray;
-  switch (expr->expr_type)
-    {
-      case EXPR_VARIABLE:
-	derived = expr->symtree->n.sym;
-	break;
-      default:
-	gcc_unreachable ();
-    }
-
-  coarray = derived->attr.codimension;
-  if (derived->ts.type == BT_DERIVED)
-    derived = derived->ts.u.derived;
-  if (coarray || derived->attr.codimension)
-    return derived;
-
-  gfc_ref *ref = expr->ref;
-  while (ref)
-    {
-      if (ref->type == REF_COMPONENT
-	  && ref->u.c.component->attr.codimension)
-	return ref->u.c.sym;
-
-      ref = ref->next;
-    }
-
-  return NULL;
-}

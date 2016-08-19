@@ -130,16 +130,12 @@ _gfortran_caf_num_images (int distance __attribute__ ((unused)),
 }
 
 
-/* This error message is used by both caf_register and caf_register_component.
- */
-const char alloc_fail_msg[] = "Failed to allocate coarray";
-
-
 void
 _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
 			gfc_descriptor_t *data, int *stat, char *errmsg,
 			int errmsg_len)
 {
+  const char alloc_fail_msg[] = "Failed to allocate coarray";
   void *local;
   caf_single_token_t single_token;
 
@@ -178,82 +174,6 @@ _gfortran_caf_register (size_t size, caf_register_t type, caf_token_t *token,
   GFC_DESCRIPTOR_DATA (data) = local;
 }
 
-#if 0
-void *
-_gfortran_caf_register_component (caf_token_t token, caf_register_t type,
-				  size_t size, int comp_idx,
-				  gfc_descriptor_t *descriptor, int num_comp,
-				  int *stat, char *errmsg, int errmsg_len)
-{
-  caf_single_token_t single_token = TOKEN(token);
-  void *component = GFC_DESCRIPTOR_DATA (descriptor);
-
-  if (unlikely (single_token->num_comps < comp_idx))
-    {
-      const char msg[] = "Failed to register component (component_id out of "
-			 "range)";
-      caf_internal_error (msg, stat, errmsg, errmsg_len);
-      return;
-    }
-
-  single_token->components[comp_idx] = (caf_single_token_t) calloc (1,
-					      sizeof (struct caf_single_token));
-  if (unlikely (single_token->components[comp_idx] == NULL))
-    {
-      caf_internal_error (alloc_fail_msg, stat, errmsg,
-			  errmsg_len);
-     return;
-    }
-
-  if (component == NULL)
-    {
-      single_token->components[comp_idx]->owning_memory = true;
-
-      if (type == CAF_REGTYPE_LOCK_STATIC || type == CAF_REGTYPE_LOCK_ALLOC
-	  || type == CAF_REGTYPE_CRITICAL || type == CAF_REGTYPE_EVENT_STATIC
-	  || type == CAF_REGTYPE_EVENT_ALLOC)
-	component = calloc (size, sizeof (bool));
-      else
-	component = malloc (size);
-
-      if (unlikely (component == NULL))
-	{
-	  caf_internal_error (alloc_fail_msg, stat, errmsg, errmsg_len);
-	  /* Roll back to prevent memory loss.  */
-	  free (single_token->components[comp_idx]);
-	  single_token->components[comp_idx] = NULL;
-	  return;
-	}
-      GFC_DESCRIPTOR_DATA (descriptor) = component;
-    }
-
-  single_token->components[comp_idx]->memptr = component;
-  single_token->components[comp_idx]->desc = descriptor;
-  if (num_comp)
-    {
-      single_token->components[comp_idx]->components = (caf_single_token_t *)
-				calloc (num_comp, sizeof (caf_single_token_t));
-      if (unlikely (single_token->components[comp_idx]->components == NULL))
-	{
-	  caf_internal_error (alloc_fail_msg, stat, errmsg, errmsg_len);
-	  /* Roll back to prevent memory loss.  */
-	  if (single_token->components[comp_idx]->owning_memory)
-	    {
-	      free (single_token->components[comp_idx]->memptr);
-	      component = NULL;
-	    }
-	  free (single_token->components[comp_idx]);
-	  single_token->components[comp_idx] = NULL;
-	  return;
-	}
-      single_token->components[comp_idx]->num_comps = num_comp;
-    }
-
-  if (stat)
-    *stat = 0;
-}
-#endif
-
 
 void
 _gfortran_caf_deregister (caf_token_t *token, int *stat,
@@ -270,49 +190,6 @@ _gfortran_caf_deregister (caf_token_t *token, int *stat,
   if (stat)
     *stat = 0;
 }
-
-#if 0
-void
-_gfortran_caf_deregister_component (caf_token_t token, int comp_num,
-				    void **component, int *stat,
-				    char *errmsg, int errmsg_len)
-{
-  caf_single_token_t single_token = TOKEN(token);
-  if (unlikely (single_token->num_comps < comp_num))
-    {
-      const char msg[] = "Failed to free component (component_id out of range)";
-      caf_internal_error (msg, stat, errmsg, errmsg_len);
-      return;
-    }
-
-  if (single_token->components[comp_num])
-    {
-      if (single_token->components[comp_num]->components != NULL)
-	{
-	  int i;
-	  for (i = 0; i < single_token->components[comp_num]->num_comps; ++i)
-	    if (single_token->components[comp_num]->components[i])
-	      _gfortran_caf_deregister_component (
-		    single_token->components[comp_num], i,
-		    &single_token->components[comp_num]->components[i]->memptr,
-		    stat, errmsg, errmsg_len);
-	}
-      if (single_token->components[comp_num]->owning_memory)
-	{
-	  /* Have to free the components memory, because we allocated it. */
-	  free (single_token->components[comp_num]->memptr);
-	  *component = NULL;
-	}
-
-      /* Now free our record-keeping structure. */
-      free (single_token->components[comp_num]);
-    }
-  single_token->components[comp_num] = NULL;
-
-  if (stat)
-    *stat = 0;
-}
-#endif
 
 
 void
@@ -1527,7 +1404,8 @@ void
 _gfortran_caf_get_by_ref (caf_token_t token,
 			  int image_index __attribute__ ((unused)),
 			  gfc_descriptor_t *dst, caf_reference_t *refs,
-			  int dst_kind, int src_kind, bool may_require_tmp,
+			  int dst_kind, int src_kind,
+			  bool may_require_tmp __attribute__ ((unused)),
 			  bool dst_reallocatable, int *stat)
 {
   const char vecrefunknownkind[] = "libcaf_single::caf_get_by_ref(): "
@@ -1819,112 +1697,6 @@ _gfortran_caf_get_by_ref (caf_token_t token,
 	  return;
 	}
     }
-#if 0
-  if (rank == 0)
-    {
-      if (GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src)
-	  && dst_kind == src_kind)
-	{
-	  memmove (GFC_DESCRIPTOR_DATA (dst), memptr,
-		   dst_size > src_size ? src_size : dst_size);
-	  if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER && dst_size > src_size)
-	    {
-	      if (dst_kind == 1)
-		memset ((void*)(char*) GFC_DESCRIPTOR_DATA (dst) + src_size,
-			' ', dst_size - src_size);
-	      else /* dst_kind == 4.  */
-		for (i = src_size/4; i < dst_size/4; i++)
-		  ((int32_t*) GFC_DESCRIPTOR_DATA (dst))[i] = (int32_t) ' ';
-	    }
-	}
-      else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER && dst_kind == 1)
-	assign_char1_from_char4 (dst_size, src_size, GFC_DESCRIPTOR_DATA (dst),
-				 memptr);
-      else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER)
-	assign_char4_from_char1 (dst_size, src_size, GFC_DESCRIPTOR_DATA (dst),
-				 memptr);
-      else
-	convert_type (GFC_DESCRIPTOR_DATA (dst), GFC_DESCRIPTOR_TYPE (dst),
-		      dst_kind, memptr, GFC_DESCRIPTOR_TYPE (src), src_kind, stat);
-      return;
-    }
-
-  if (may_require_tmp)
-    {
-      ptrdiff_t array_offset_sr, array_offset_dst;
-      void *tmp = malloc (size*src_size);
-
-      array_offset_dst = 0;
-      for (i = 0; i < size; i++)
-	{
-	  ptrdiff_t array_offset_sr = 0;
-	  ptrdiff_t stride = 1;
-	  ptrdiff_t extent = 1;
-	  for (j = 0; j < GFC_DESCRIPTOR_RANK (src)-1; j++)
-	    {
-	      array_offset_sr += ((i / (extent*stride))
-				  % (src->dim[j]._ubound
-				    - src->dim[j].lower_bound + 1))
-				 * src->dim[j]._stride;
-	      extent = (src->dim[j]._ubound - src->dim[j].lower_bound + 1);
-	      stride = src->dim[j]._stride;
-	    }
-	  array_offset_sr += (i / extent) * src->dim[rank-1]._stride;
-	  void *sr = (void *)((char *) MEMTOK (token) + offset
-			  + array_offset_sr*GFC_DESCRIPTOR_SIZE (src));
-          memcpy ((void *) ((char *) tmp + array_offset_dst), sr, src_size);
-          array_offset_dst += src_size;
-	}
-
-      array_offset_sr = 0;
-      for (i = 0; i < size; i++)
-	{
-	  ptrdiff_t array_offset_dst = 0;
-	  ptrdiff_t stride = 1;
-	  ptrdiff_t extent = 1;
-	  for (j = 0; j < rank-1; j++)
-	    {
-	      array_offset_dst += ((i / (extent*stride))
-				   % (dst->dim[j]._ubound
-				      - dst->dim[j].lower_bound + 1))
-				  * dst->dim[j]._stride;
-	      extent = (dst->dim[j]._ubound - dst->dim[j].lower_bound + 1);
-	      stride = dst->dim[j]._stride;
-	    }
-	  array_offset_dst += (i / extent) * dst->dim[rank-1]._stride;
-	  void *dst = dst->base_addr
-		      + array_offset_dst*GFC_DESCRIPTOR_SIZE (dst);
-          void *sr = tmp + array_offset_sr;
-
-	  if (GFC_DESCRIPTOR_TYPE (dst) == GFC_DESCRIPTOR_TYPE (src)
-	      && dst_kind == src_kind)
-	    {
-	      memmove (dst, sr, dst_size > src_size ? src_size : dst_size);
-	      if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER
-	          && dst_size > src_size)
-		{
-		  if (dst_kind == 1)
-		    memset ((void*)(char*) dst + src_size, ' ',
-			    dst_size-src_size);
-		  else /* dst_kind == 4.  */
-		    for (k = src_size/4; k < dst_size/4; k++)
-		      ((int32_t*) dst)[k] = (int32_t) ' ';
-		}
-	    }
-	  else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER && dst_kind == 1)
-	    assign_char1_from_char4 (dst_size, src_size, dst, sr);
-	  else if (GFC_DESCRIPTOR_TYPE (dst) == BT_CHARACTER)
-	    assign_char4_from_char1 (dst_size, src_size, dst, sr);
-	  else
-	    convert_type (dst, GFC_DESCRIPTOR_TYPE (dst), dst_kind,
-			  sr, GFC_DESCRIPTOR_TYPE (src), src_kind, stat);
-          array_offset_sr += src_size;
-	}
-
-      free (tmp);
-      return;
-    }
-#endif
 
   /* Reset the token.  */
   single_token = TOKEN (token);
@@ -1932,12 +1704,13 @@ _gfortran_caf_get_by_ref (caf_token_t token,
   src = single_token->desc;
   memset(dst_index, 0, sizeof (dst_index));
   i = 0;
-  while (i < size)
-    {
+//  while (i < size)
+//    {
       get_for_ref (refs, &i, dst_index, single_token, dst, src,
 		   GFC_DESCRIPTOR_DATA (dst), memptr, dst_kind, src_kind, 0, 0,
 		   1, stat);
-    }
+//    }
+  assert (i == size);
 }
 
 
@@ -2052,7 +1825,8 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 	      if (stat != NULL && *stat)
 		return;
 	      /* The memptr, descriptor and the token are set below.  */
-	      GFC_DESCRIPTOR_CAF_TOKEN (dst) = single_token;
+	      *(caf_single_token_t *)(ds + ref->u.c.caf_token_offset) =
+		  single_token;
 	    }
 	  single_token = *(caf_single_token_t*)(ds + ref->u.c.caf_token_offset);
 	  send_by_ref (ref->next, i, src_index, single_token,
@@ -2301,7 +2075,8 @@ void
 _gfortran_caf_send_by_ref (caf_token_t token,
 			   int image_index __attribute__ ((unused)),
 			   gfc_descriptor_t *src, caf_reference_t *refs,
-			   int dst_kind, int src_kind, bool may_require_tmp,
+			   int dst_kind, int src_kind,
+			   bool may_require_tmp __attribute__ ((unused)),
 			   bool dst_reallocatable, int *stat)
 {
   const char vecrefunknownkind[] = "libcaf_single::caf_get_by_ref(): "
@@ -2667,12 +2442,13 @@ _gfortran_caf_send_by_ref (caf_token_t token,
   dst = single_token->desc;
   memset(dst_index, 0, sizeof (dst_index));
   i = 0;
-  while (i < size)
-    {
+//  while (i < size)
+//    {
       send_by_ref (refs, &i, dst_index, single_token, dst, src,
 		   memptr, GFC_DESCRIPTOR_DATA (src), dst_kind, src_kind, 0, 0,
 		   1, size, stat);
-    }
+//    }
+   assert (i == size);
 }
 
 
@@ -2681,15 +2457,23 @@ _gfortran_caf_sendget_by_ref (caf_token_t dst_token, int dst_image_index,
 			      caf_reference_t *dst_refs, caf_token_t src_token,
 			      int src_image_index,
 			      caf_reference_t *src_refs, int dst_kind,
-			      int src_kind, bool may_require_tmp, int *stat)
+			      int src_kind, bool may_require_tmp, int *dst_stat,
+			      int *src_stat)
 {
   gfc_array_void temp;
 
   _gfortran_caf_get_by_ref (src_token, src_image_index, &temp, src_refs,
-			    dst_kind, src_kind, may_require_tmp, true, stat);
+			    dst_kind, src_kind, may_require_tmp, true,
+			    src_stat);
+
+  if (src_stat && *src_stat != 0)
+    return;
 
   _gfortran_caf_send_by_ref (dst_token, dst_image_index, &temp, dst_refs,
-			     dst_kind, src_kind, may_require_tmp, true, stat);
+			     dst_kind, src_kind, may_require_tmp, true,
+			     dst_stat);
+  if (GFC_DESCRIPTOR_DATA (&temp))
+    free (GFC_DESCRIPTOR_DATA (&temp));
 }
 
 

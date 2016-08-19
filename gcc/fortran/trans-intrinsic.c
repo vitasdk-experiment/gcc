@@ -1812,7 +1812,7 @@ conv_caf_send (gfc_code *code) {
   gfc_se lhs_se, rhs_se;
   stmtblock_t block;
   tree caf_decl, token, offset, image_index, tmp, lhs_kind, rhs_kind;
-  tree may_require_tmp, stat;
+  tree may_require_tmp, src_stat, dst_stat;
   tree lhs_type = NULL_TREE;
   tree vec = null_pointer_node, rhs_vec = null_pointer_node;
   symbol_attribute lhs_caf_attr, rhs_caf_attr;
@@ -1827,7 +1827,7 @@ conv_caf_send (gfc_code *code) {
 
   lhs_caf_attr = gfc_caf_attr (lhs_expr);
   rhs_caf_attr = gfc_caf_attr (rhs_expr);
-  stat = null_pointer_node;
+  src_stat = dst_stat = null_pointer_node;
 
   /* LHS.  */
   gfc_init_se (&lhs_se, NULL);
@@ -2017,12 +2017,10 @@ conv_caf_send (gfc_code *code) {
       gfc_se stat_se;
       gfc_init_se (&stat_se, NULL);
       gfc_conv_expr_reference (&stat_se, tmp_stat);
-      stat = stat_se.expr;
+      dst_stat = stat_se.expr;
       gfc_add_block_to_block (&block, &stat_se.pre);
       gfc_add_block_to_block (&block, &stat_se.post);
     }
-  else
-    stat = null_pointer_node;
 
   if (!gfc_is_coindexed (rhs_expr) && !rhs_caf_attr.codimension)
     {
@@ -2035,13 +2033,13 @@ conv_caf_send (gfc_code *code) {
 	  tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_send_by_ref,
 				     9, token, image_index, rhs_se.expr,
 				     reference, lhs_kind, rhs_kind,
-				     may_require_tmp, dst_realloc, stat);
+				     may_require_tmp, dst_realloc, src_stat);
 	  }
       else
 	tmp = build_call_expr_loc (input_location, gfor_fndecl_caf_send, 10, token,
 				   offset, image_index, lhs_se.expr, vec,
 				   rhs_se.expr, lhs_kind, rhs_kind, may_require_tmp,
-				   stat);
+				   src_stat);
     }
   else
     {
@@ -2062,16 +2060,29 @@ conv_caf_send (gfc_code *code) {
       tmp = rhs_se.expr;
       if (rhs_caf_attr.alloc_comp)
 	{
+	  tmp_stat = gfc_find_stat_co (lhs_expr);
+
+	  if (tmp_stat)
+	    {
+	      gfc_se stat_se;
+	      gfc_init_se (&stat_se, NULL);
+	      gfc_conv_expr_reference (&stat_se, tmp_stat);
+	      src_stat = stat_se.expr;
+	      gfc_add_block_to_block (&block, &stat_se.pre);
+	      gfc_add_block_to_block (&block, &stat_se.post);
+	    }
+
 	  gfc_get_caf_token_offset (&rhs_se, &rhs_token, NULL, caf_decl,
 				    NULL_TREE, NULL);
 	  tree lhs_reference, rhs_reference;
 	  lhs_reference = conv_expr_ref_to_caf_ref (&block, lhs_expr);
 	  rhs_reference = conv_expr_ref_to_caf_ref (&block, rhs_expr);
 	  tmp = build_call_expr_loc (input_location,
-				     gfor_fndecl_caf_sendget_by_ref, 10,
+				     gfor_fndecl_caf_sendget_by_ref, 11,
 				     token, image_index, lhs_reference,
 				     rhs_token, rhs_image_index, rhs_reference,
-				     lhs_kind, rhs_kind, may_require_tmp, stat);
+				     lhs_kind, rhs_kind, may_require_tmp,
+				     dst_stat, src_stat);
 	}
       else
 	{
@@ -2081,7 +2092,7 @@ conv_caf_send (gfc_code *code) {
 				     token, offset, image_index, lhs_se.expr, vec,
 				     rhs_token, rhs_offset, rhs_image_index,
 				     tmp, rhs_vec, lhs_kind, rhs_kind,
-				     may_require_tmp, stat);
+				     may_require_tmp, src_stat);
 	}
     }
   gfc_add_expr_to_block (&block, tmp);
