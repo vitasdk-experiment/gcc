@@ -82,7 +82,7 @@
 
 /* (AVR_TINY only): Symbol has attribute progmem */
 #define AVR_SYMBOL_FLAG_TINY_PM \
-  (SYMBOL_FLAG_MACH_DEP << 4)
+  (SYMBOL_FLAG_MACH_DEP << 7)
 
 #define TINY_ADIW(REG1, REG2, I)                                \
     "subi " #REG1 ",lo8(-(" #I "))" CR_TAB                      \
@@ -2045,50 +2045,6 @@ avr_legitimize_reload_address (rtx *px, machine_mode mode,
     }
 
   return NULL_RTX;
-}
-
-
-/* Implement `TARGET_SECONDARY_RELOAD' */
-
-static reg_class_t
-avr_secondary_reload (bool in_p, rtx x,
-                      reg_class_t reload_class ATTRIBUTE_UNUSED,
-                      machine_mode mode, secondary_reload_info *sri)
-{
-  if (in_p
-      && MEM_P (x)
-      && !ADDR_SPACE_GENERIC_P (MEM_ADDR_SPACE (x))
-      && ADDR_SPACE_MEMX != MEM_ADDR_SPACE (x))
-    {
-      /* For the non-generic 16-bit spaces we need a d-class scratch.  */
-
-      switch (mode)
-        {
-        default:
-          gcc_unreachable();
-
-        case QImode:  sri->icode = CODE_FOR_reload_inqi; break;
-        case QQmode:  sri->icode = CODE_FOR_reload_inqq; break;
-        case UQQmode: sri->icode = CODE_FOR_reload_inuqq; break;
-
-        case HImode:  sri->icode = CODE_FOR_reload_inhi; break;
-        case HQmode:  sri->icode = CODE_FOR_reload_inhq; break;
-        case HAmode:  sri->icode = CODE_FOR_reload_inha; break;
-        case UHQmode: sri->icode = CODE_FOR_reload_inuhq; break;
-        case UHAmode: sri->icode = CODE_FOR_reload_inuha; break;
-
-        case PSImode: sri->icode = CODE_FOR_reload_inpsi; break;
-
-        case SImode:  sri->icode = CODE_FOR_reload_insi; break;
-        case SFmode:  sri->icode = CODE_FOR_reload_insf; break;
-        case SQmode:  sri->icode = CODE_FOR_reload_insq; break;
-        case SAmode:  sri->icode = CODE_FOR_reload_insa; break;
-        case USQmode: sri->icode = CODE_FOR_reload_inusq; break;
-        case USAmode: sri->icode = CODE_FOR_reload_inusa; break;
-        }
-    }
-
-  return NO_REGS;
 }
 
 
@@ -5401,7 +5357,7 @@ avr_out_compare (rtx_insn *insn, rtx *xop, int *plen)
      the constant is of the form 0xabab.  */
 
   if (n_bytes == 2
-      && xval != 0
+      && xval != const0_rtx
       && test_hard_reg_class (LD_REGS, xreg)
       && compare_eq_p (insn)
       && !reg_unused_after (insn, xreg))
@@ -7973,6 +7929,76 @@ avr_out_addto_sp (rtx *op, int *plen)
 }
 
 
+/* Output instructions to insert an inverted bit into OPERANDS[0]:
+   $0.$1 = ~$2.$3      if XBITNO = NULL
+   $0.$1 = ~$2.XBITNO  if XBITNO != NULL.
+   If PLEN = NULL then output the respective instruction sequence which
+   is a combination of BST / BLD and some instruction(s) to invert the bit.
+   If PLEN != NULL then store the length of the sequence (in words) in *PLEN.
+   Return "".  */
+
+const char*
+avr_out_insert_notbit (rtx_insn *insn, rtx operands[], rtx xbitno, int *plen)
+{
+  rtx op[4] = { operands[0], operands[1], operands[2],
+                xbitno == NULL_RTX ? operands [3] : xbitno };
+
+  if (INTVAL (op[1]) == 7
+      && test_hard_reg_class (LD_REGS, op[0]))
+    {
+      /* If the inserted bit number is 7 and we have a d-reg, then invert
+         the bit after the insertion by means of SUBI *,0x80.  */
+
+      if (INTVAL (op[3]) == 7
+          && REGNO (op[0]) == REGNO (op[2]))
+        {
+          avr_asm_len ("subi %0,0x80", op, plen, -1);
+        }
+      else
+        {
+          avr_asm_len ("bst %2,%3" CR_TAB
+                       "bld %0,%1" CR_TAB
+                       "subi %0,0x80", op, plen, -3);
+        }
+    }
+  else if (test_hard_reg_class (LD_REGS, op[0])
+           && (INTVAL (op[1]) != INTVAL (op[3])
+               || !reg_overlap_mentioned_p (op[0], op[2])))
+    {
+      /* If the destination bit is in a d-reg we can jump depending
+         on the source bit and use ANDI / ORI.  This just applies if we
+         have not an early-clobber situation with the bit.  */
+
+      avr_asm_len ("andi %0,~(1<<%1)" CR_TAB
+                   "sbrs %2,%3"       CR_TAB
+                   "ori %0,1<<%1", op, plen, -3);
+    }
+  else
+    {
+      /* Otherwise, invert the bit by means of COM before we store it with
+         BST and then undo the COM if needed.  */
+
+      avr_asm_len ("com %2" CR_TAB
+                   "bst %2,%3", op, plen, -2);
+
+      if (!reg_unused_after (insn, op[2])
+          // A simple 'reg_unused_after' is not enough because that function
+          // assumes that the destination register is overwritten completely
+          // and hence is in order for our purpose.  This is not the case
+          // with BLD which just changes one bit of the destination.
+          || reg_overlap_mentioned_p (op[0], op[2]))
+        {
+          /* Undo the COM from above.  */
+          avr_asm_len ("com %2", op, plen, 1);
+        }
+
+      avr_asm_len ("bld %0,%1", op, plen, 1);
+    }
+              
+  return "";
+}
+
+
 /* Outputs instructions needed for fixed point type conversion.
    This includes converting between any fixed point type, as well
    as converting to any integer type.  Conversion between integer
@@ -8777,7 +8803,6 @@ avr_adjust_insn_length (rtx_insn *insn, int len)
     case ADJUST_LEN_MOV32: output_movsisf (insn, op, &len); break;
     case ADJUST_LEN_MOVMEM: avr_out_movmem (insn, op, &len); break;
     case ADJUST_LEN_XLOAD: avr_out_xload (insn, op, &len); break;
-    case ADJUST_LEN_LPM: avr_out_lpm (insn, op, &len); break;
     case ADJUST_LEN_SEXT: avr_out_sign_extend (insn, op, &len); break;
 
     case ADJUST_LEN_SFRACT: avr_out_fract (insn, op, true, &len); break;
@@ -8809,6 +8834,16 @@ avr_adjust_insn_length (rtx_insn *insn, int len)
     case ADJUST_LEN_CALL: len = AVR_HAVE_JMP_CALL ? 2 : 1; break;
 
     case ADJUST_LEN_INSERT_BITS: avr_out_insert_bits (op, &len); break;
+
+    case ADJUST_LEN_INSV_NOTBIT:
+      avr_out_insert_notbit (insn, op, NULL_RTX, &len);
+      break;
+    case ADJUST_LEN_INSV_NOTBIT_0:
+      avr_out_insert_notbit (insn, op, const0_rtx, &len);
+      break;
+    case ADJUST_LEN_INSV_NOTBIT_7:
+      avr_out_insert_notbit (insn, op, GEN_INT (7), &len);
+      break;
 
     default:
       gcc_unreachable();
@@ -12679,6 +12714,18 @@ avr_expand_delay_cycles (rtx operands0)
 }
 
 
+static void
+avr_expand_nops (rtx operands0)
+{
+  unsigned HOST_WIDE_INT n_nops = UINTVAL (operands0) & GET_MODE_MASK (HImode);
+
+  while (n_nops--)
+    {
+      emit_insn (gen_nopv (const1_rtx));
+    }
+}
+
+
 /* Compute the image of x under f, i.e. perform   x --> f(x)    */
 
 static int
@@ -13353,6 +13400,19 @@ avr_expand_builtin (tree exp, rtx target,
         return NULL_RTX;
       }
 
+    case AVR_BUILTIN_NOPS:
+      {
+        arg0 = CALL_EXPR_ARG (exp, 0);
+        op0 = expand_expr (arg0, NULL_RTX, VOIDmode, EXPAND_NORMAL);
+
+        if (!CONST_INT_P (op0))
+          error ("%s expects a compile time integer constant", bname);
+        else
+          avr_expand_nops (op0);
+
+        return NULL_RTX;
+      }
+
     case AVR_BUILTIN_INSERT_BITS:
       {
         arg0 = CALL_EXPR_ARG (exp, 0);
@@ -13807,9 +13867,6 @@ avr_fold_builtin (tree fndecl, int n_args ATTRIBUTE_UNUSED, tree *arg,
 
 #undef  TARGET_MODE_DEPENDENT_ADDRESS_P
 #define TARGET_MODE_DEPENDENT_ADDRESS_P avr_mode_dependent_address_p
-
-#undef  TARGET_SECONDARY_RELOAD
-#define TARGET_SECONDARY_RELOAD avr_secondary_reload
 
 #undef  TARGET_PRINT_OPERAND
 #define TARGET_PRINT_OPERAND avr_print_operand

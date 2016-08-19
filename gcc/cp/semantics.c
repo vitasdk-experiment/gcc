@@ -656,8 +656,8 @@ maybe_convert_cond (tree cond)
       && !TREE_NO_WARNING (cond)
       && warn_parentheses)
     {
-      warning (OPT_Wparentheses,
-	       "suggest parentheses around assignment used as truth value");
+      warning_at (EXPR_LOC_OR_LOC (cond, input_location), OPT_Wparentheses,
+		  "suggest parentheses around assignment used as truth value");
       TREE_NO_WARNING (cond) = 1;
     }
 
@@ -2916,7 +2916,7 @@ begin_class_definition (tree t)
   /* Reset the interface data, at the earliest possible
      moment, as it might have been set via a class foo;
      before.  */
-  if (! TYPE_ANONYMOUS_P (t))
+  if (! TYPE_UNNAMED_P (t))
     {
       struct c_fileinfo *finfo = \
 	get_fileinfo (LOCATION_FILE (input_location));
@@ -3548,6 +3548,12 @@ finish_id_expression (tree id_expression,
 	 resolve the name at instantiation time.  */
       if (dependent_p)
 	{
+	  if (DECL_P (decl)
+	      && any_dependent_type_attributes_p (DECL_ATTRIBUTES (decl)))
+	    /* Dependent type attributes on the decl mean that the TREE_TYPE is
+	       wrong, so just return the identifier.  */
+	    return id_expression;
+
 	  /* If we found a variable, then name lookup during the
 	     instantiation will always resolve to the same VAR_DECL
 	     (or an instantiation thereof).  */
@@ -9279,6 +9285,10 @@ apply_deduced_return_type (tree fco, tree return_type)
   if (TREE_TYPE (result) == return_type)
     return;
 
+  if (!processing_template_decl && !VOID_TYPE_P (return_type)
+      && !complete_type_or_else (return_type, NULL_TREE))
+    return;
+
   /* We already have a DECL_RESULT from start_preparsed_function.
      Now we need to redo the work it and allocate_struct_function
      did to reflect the new type.  */
@@ -9294,8 +9304,6 @@ apply_deduced_return_type (tree fco, tree return_type)
 
   if (!processing_template_decl)
     {
-      if (!VOID_TYPE_P (TREE_TYPE (result)))
-	complete_type_or_else (TREE_TYPE (result), NULL_TREE);
       bool aggr = aggregate_value_p (result, fco);
 #ifdef PCC_STATIC_STRUCT_RETURN
       cfun->returns_pcc_struct = aggr;

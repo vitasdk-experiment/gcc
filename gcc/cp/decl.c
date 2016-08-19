@@ -4614,7 +4614,7 @@ check_tag_decl (cp_decl_specifier_seq *declspecs,
     }
   /* Check for an anonymous union.  */
   else if (declared_type && RECORD_OR_UNION_CODE_P (TREE_CODE (declared_type))
-	   && TYPE_ANONYMOUS_P (declared_type))
+	   && TYPE_UNNAMED_P (declared_type))
     {
       /* 7/3 In a simple-declaration, the optional init-declarator-list
 	 can be omitted only when declaring a class (clause 9) or
@@ -5894,8 +5894,10 @@ reshape_init_r (tree type, reshape_iter *d, bool first_initializer_p,
 	    }
 	}
 
-      warning (OPT_Wmissing_braces, "missing braces around initializer for %qT",
-	       type);
+      if (complain & tf_warning)
+	warning (OPT_Wmissing_braces,
+		 "missing braces around initializer for %qT",
+		 type);
     }
 
   /* Dispatch to specialized routines.  */
@@ -6303,7 +6305,7 @@ make_rtl_for_nonlocal_decl (tree decl, tree init, const char* asmspec)
      DECL_EXPR is expanded.  But with constexpr its function might never
      be expanded, so go ahead and tell cgraph about the variable now.  */
   defer_p = ((DECL_FUNCTION_SCOPE_P (decl)
-	      && !DECL_DECLARED_CONSTEXPR_P (DECL_CONTEXT (decl)))
+	      && !var_in_maybe_constexpr_fn (decl))
 	     || DECL_VIRTUAL_P (decl));
 
   /* Defer template instantiations.  */
@@ -10771,7 +10773,7 @@ grokdeclarator (const cp_declarator *declarator,
 	  && unqualified_id
 	  && TYPE_NAME (type)
 	  && TREE_CODE (TYPE_NAME (type)) == TYPE_DECL
-	  && TYPE_ANONYMOUS_P (type)
+	  && TYPE_UNNAMED_P (type)
 	  && declspecs->type_definition_p
 	  && attributes_naming_typedef_ok (*attrlist)
 	  && cp_type_quals (type) == TYPE_UNQUALIFIED)
@@ -10783,7 +10785,7 @@ grokdeclarator (const cp_declarator *declarator,
 	    {
 	      if (anon_aggrname_p (TYPE_IDENTIFIER (t)))
 		/* We do not rename the debug info representing the
-		   anonymous tagged type because the standard says in
+		   unnamed tagged type because the standard says in
 		   [dcl.typedef] that the naming applies only for
 		   linkage purposes.  */
 		/*debug_hooks->set_name (t, decl);*/
@@ -10791,7 +10793,7 @@ grokdeclarator (const cp_declarator *declarator,
   	    }
 
 	  if (TYPE_LANG_SPECIFIC (type))
-	    TYPE_WAS_ANONYMOUS (type) = 1;
+	    TYPE_WAS_UNNAMED (type) = 1;
 
 	  /* If this is a typedef within a template class, the nested
 	     type is a (non-primary) template.  The name for the
@@ -10800,7 +10802,7 @@ grokdeclarator (const cp_declarator *declarator,
 	    DECL_NAME (CLASSTYPE_TI_TEMPLATE (type))
 	      = TYPE_IDENTIFIER (type);
 
-	  /* Adjust linkage now that we aren't anonymous anymore.  */
+	  /* Adjust linkage now that we aren't unnamed anymore.  */
 	  reset_type_linkage (type);
 
 	  /* FIXME remangle member functions; member functions of a
@@ -13585,14 +13587,23 @@ build_enumerator (tree name, tree value, tree enumtype, tree attributes,
 
 	  if (value != NULL_TREE)
 	    {
-	      value = cxx_constant_value (value);
-
-	      if (TREE_CODE (value) != INTEGER_CST
-		  || ! INTEGRAL_OR_ENUMERATION_TYPE_P (TREE_TYPE (value)))
+	      if (! INTEGRAL_OR_UNSCOPED_ENUMERATION_TYPE_P
+		  (TREE_TYPE (value)))
 		{
-		  error ("enumerator value for %qD is not an integer constant",
-			 name);
+		  error ("enumerator value for %qD must have integral or "
+			 "unscoped enumeration type", name);
 		  value = NULL_TREE;
+		}
+	      else
+		{
+		  value = cxx_constant_value (value);
+
+		  if (TREE_CODE (value) != INTEGER_CST)
+		    {
+		      error ("enumerator value for %qD is not an integer "
+			     "constant", name);
+		      value = NULL_TREE;
+		    }
 		}
 	    }
 	}
@@ -14736,6 +14747,14 @@ finish_function (int flags)
   // If this is a concept, check that the definition is reasonable.
   if (DECL_DECLARED_CONCEPT_P (fndecl))
     check_function_concept (fndecl);
+
+  /* Lambda closure members are implicitly constexpr if possible.  */
+  if (cxx_dialect >= cxx1z
+      && LAMBDA_TYPE_P (CP_DECL_CONTEXT (fndecl))
+      && (processing_template_decl
+	  || is_valid_constexpr_fn (fndecl, /*complain*/false))
+      && potential_constant_expression (DECL_SAVED_TREE (fndecl)))
+    DECL_DECLARED_CONSTEXPR_P (fndecl) = true;
 
   /* Save constexpr function body before it gets munged by
      the NRV transformation.   */

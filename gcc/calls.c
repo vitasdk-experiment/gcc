@@ -194,10 +194,19 @@ prepare_call_address (tree fndecl_or_type, rtx funexp, rtx static_chain_value,
 	       && targetm.small_register_classes_for_mode_p (FUNCTION_MODE))
 	      ? force_not_mem (memory_address (FUNCTION_MODE, funexp))
 	      : memory_address (FUNCTION_MODE, funexp));
-  else if (! sibcallp)
+  else
     {
-      if (!NO_FUNCTION_CSE && optimize && ! flag_no_function_cse)
-	funexp = force_reg (Pmode, funexp);
+      /* funexp could be a SYMBOL_REF represents a function pointer which is
+	 of ptr_mode.  In this case, it should be converted into address mode
+	 to be a valid address for memory rtx pattern.  See PR 64971.  */
+      if (GET_MODE (funexp) != Pmode)
+	funexp = convert_memory_address (Pmode, funexp);
+
+      if (! sibcallp)
+	{
+	  if (!NO_FUNCTION_CSE && optimize && ! flag_no_function_cse)
+	    funexp = force_reg (Pmode, funexp);
+	}
     }
 
   if (static_chain_value != 0
@@ -468,15 +477,13 @@ emit_call_1 (rtx funexp, tree fntree ATTRIBUTE_UNUSED, tree fndecl ATTRIBUTE_UNU
     anti_adjust_stack (GEN_INT (n_popped));
 }
 
-/* Determine if the function identified by NAME and FNDECL is one with
-   special properties we wish to know about.
+/* Determine if the function identified by FNDECL is one with
+   special properties we wish to know about.  Modify FLAGS accordingly.
 
    For example, if the function might return more than one time (setjmp), then
-   set RETURNS_TWICE to a nonzero value.
+   set ECF_RETURNS_TWICE.
 
-   Similarly set NORETURN if the function is in the longjmp family.
-
-   Set MAY_BE_ALLOCA for any memory allocation function that might allocate
+   Set ECF_MAY_BE_ALLOCA for any memory allocation function that might allocate
    space from the stack such as alloca.  */
 
 static int
@@ -491,7 +498,7 @@ special_function_p (const_tree fndecl, int flags)
     name_decl = DECL_NAME (cgraph_node::get (fndecl)->orig_decl);
 
   if (fndecl && name_decl
-      && IDENTIFIER_LENGTH (name_decl) <= 17
+      && IDENTIFIER_LENGTH (name_decl) <= 11
       /* Exclude functions not at the file scope, or not `extern',
 	 since they are not the magic functions we would otherwise
 	 think they are.
@@ -514,47 +521,22 @@ special_function_p (const_tree fndecl, int flags)
 	  && ! strcmp (name, "alloca"))
 	flags |= ECF_MAY_BE_ALLOCA;
 
-      /* Disregard prefix _, __, __x or __builtin_.  */
+      /* Disregard prefix _ or __.  */
       if (name[0] == '_')
 	{
-	  if (name[1] == '_'
-	      && name[2] == 'b'
-	      && !strncmp (name + 3, "uiltin_", 7))
-	    tname += 10;
-	  else if (name[1] == '_' && name[2] == 'x')
-	    tname += 3;
-	  else if (name[1] == '_')
+	  if (name[1] == '_')
 	    tname += 2;
 	  else
 	    tname += 1;
 	}
 
-      if (tname[0] == 's')
-	{
-	  if ((tname[1] == 'e'
-	       && (! strcmp (tname, "setjmp")
-		   || ! strcmp (tname, "setjmp_syscall")))
-	      || (tname[1] == 'i'
-		  && ! strcmp (tname, "sigsetjmp"))
-	      || (tname[1] == 'a'
-		  && ! strcmp (tname, "savectx")))
-	    flags |= ECF_RETURNS_TWICE | ECF_LEAF;
-
-	  if (tname[1] == 'i'
-	      && ! strcmp (tname, "siglongjmp"))
-	    flags |= ECF_NORETURN;
-	}
-      else if ((tname[0] == 'q' && tname[1] == 's'
-		&& ! strcmp (tname, "qsetjmp"))
-	       || (tname[0] == 'v' && tname[1] == 'f'
-		   && ! strcmp (tname, "vfork"))
-	       || (tname[0] == 'g' && tname[1] == 'e'
-		   && !strcmp (tname, "getcontext")))
-	flags |= ECF_RETURNS_TWICE | ECF_LEAF;
-
-      else if (tname[0] == 'l' && tname[1] == 'o'
-	       && ! strcmp (tname, "longjmp"))
-	flags |= ECF_NORETURN;
+      /* ECF_RETURNS_TWICE is safe even for -ffreestanding.  */
+      if (! strcmp (tname, "setjmp")
+	  || ! strcmp (tname, "sigsetjmp")
+	  || ! strcmp (name, "savectx")
+	  || ! strcmp (name, "vfork")
+	  || ! strcmp (name, "getcontext"))
+	flags |= ECF_RETURNS_TWICE;
     }
 
   if (DECL_BUILT_IN_CLASS (fndecl) == BUILT_IN_NORMAL)
@@ -617,10 +599,10 @@ setjmp_call_p (const_tree fndecl)
 }
 
 
-/* Return true if STMT is an alloca call.  */
+/* Return true if STMT may be an alloca call.  */
 
 bool
-gimple_alloca_call_p (const gimple *stmt)
+gimple_maybe_alloca_call_p (const gimple *stmt)
 {
   tree fndecl;
 
@@ -634,7 +616,31 @@ gimple_alloca_call_p (const gimple *stmt)
   return false;
 }
 
-/* Return true when exp contains alloca call.  */
+/* Return true if STMT is a builtin alloca call.  */
+
+bool
+gimple_alloca_call_p (const gimple *stmt)
+{
+  tree fndecl;
+
+  if (!is_gimple_call (stmt))
+    return false;
+
+  fndecl = gimple_call_fndecl (stmt);
+  if (fndecl && DECL_BUILT_IN_CLASS (fndecl) == BUILT_IN_NORMAL)
+    switch (DECL_FUNCTION_CODE (fndecl))
+      {
+      case BUILT_IN_ALLOCA:
+      case BUILT_IN_ALLOCA_WITH_ALIGN:
+        return true;
+      default:
+	break;
+      }
+
+  return false;
+}
+
+/* Return true when exp contains a builtin alloca call.  */
 
 bool
 alloca_call_p (const_tree exp)
@@ -642,8 +648,16 @@ alloca_call_p (const_tree exp)
   tree fndecl;
   if (TREE_CODE (exp) == CALL_EXPR
       && (fndecl = get_callee_fndecl (exp))
-      && (special_function_p (fndecl, 0) & ECF_MAY_BE_ALLOCA))
-    return true;
+      && DECL_BUILT_IN_CLASS (fndecl) == BUILT_IN_NORMAL)
+    switch (DECL_FUNCTION_CODE (fndecl))
+      {
+      case BUILT_IN_ALLOCA:
+      case BUILT_IN_ALLOCA_WITH_ALIGN:
+        return true;
+      default:
+	break;
+      }
+
   return false;
 }
 

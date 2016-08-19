@@ -2472,6 +2472,7 @@ create_omp_child_function (omp_context *ctx, bool task_copy)
   DECL_EXTERNAL (decl) = 0;
   DECL_CONTEXT (decl) = NULL_TREE;
   DECL_INITIAL (decl) = make_node (BLOCK);
+  BLOCK_SUPERCONTEXT (DECL_INITIAL (decl)) = decl;
   if (cgraph_node::get (current_function_decl)->offloadable)
     cgraph_node::get_create (decl)->offloadable = 1;
   else
@@ -5454,7 +5455,15 @@ lower_lastprivate_clauses (tree clauses, tree predicate, gimple_seq *stmt_list,
 	      new_var = lookup_decl (var, ctx->outer);
 	    }
 	  else
-	    new_var = lookup_decl (var, ctx);
+	    {
+	      new_var = lookup_decl (var, ctx);
+	      /* Avoid uninitialized warnings for lastprivate and
+		 for linear iterators.  */
+	      if (predicate
+		  && (OMP_CLAUSE_CODE (c) == OMP_CLAUSE_LASTPRIVATE
+		      || OMP_CLAUSE_LINEAR_NO_COPYIN (c)))
+		TREE_NO_WARNING (new_var) = 1;
+	    }
 
 	  if (simduid && DECL_HAS_VALUE_EXPR_P (new_var))
 	    {
@@ -13670,6 +13679,7 @@ grid_expand_target_grid_body (struct omp_region *target)
   BLOCK_ABSTRACT_ORIGIN (fniniblock) = tgtblock;
   BLOCK_SOURCE_LOCATION (fniniblock) = BLOCK_SOURCE_LOCATION (tgtblock);
   BLOCK_SOURCE_END_LOCATION (fniniblock) = BLOCK_SOURCE_END_LOCATION (tgtblock);
+  BLOCK_SUPERCONTEXT (fniniblock) = kern_fndecl;
   DECL_INITIAL (kern_fndecl) = fniniblock;
   push_struct_function (kern_fndecl);
   cfun->function_end_locus = gimple_location (tgt_stmt);
