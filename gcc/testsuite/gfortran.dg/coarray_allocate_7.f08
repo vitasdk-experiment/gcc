@@ -2,6 +2,7 @@
 ! { dg-options "-fcoarray=lib -lcaf_single -fdump-tree-original" }
 
 ! Contributed by Damian Rouson
+! Checking whether (de-)registering of coarrays works.
 
 program main
 
