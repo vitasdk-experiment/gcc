@@ -3420,6 +3420,10 @@ gfc_get_caf_reference_type ()
 					 gfc_rank_cst[GFC_MAX_DIMENSIONS - 1])),
 		&chain);
   TREE_NO_WARNING (tmp) = 1;
+  tmp = gfc_add_field_to_struct_1 (a_struct_type,
+				   get_identifier ("static_array_type"),
+				   integer_type_node, &chain);
+  TREE_NO_WARNING (tmp) = 1;
   tmp = gfc_add_field_to_struct_1 (a_struct_type, get_identifier ("dim"),
 				   dim_union_type, &chain);
   TREE_NO_WARNING (tmp) = 1;

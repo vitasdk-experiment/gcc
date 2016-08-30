@@ -144,6 +144,8 @@ typedef struct caf_reference_t {
       /* The mode of the array ref.  See CAF_ARR_REF_*.  */
       /* caf_array_ref_t */
       unsigned char mode[GFC_MAX_DIMENSIONS];
+      /* The type of a static array.  Unset for array's with descriptors.  */
+      int static_array_type;
       /* Subscript refs (s) or vector refs (v).  */
       union {
 	struct {

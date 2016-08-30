@@ -1121,7 +1121,7 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
   gfc_se se;
   bool ref_static_array = false;
   tree last_component_ref_tree = NULL_TREE;
-  int i;
+  int i, last_type_n;
 
   if (expr->symtree)
     {
@@ -1132,6 +1132,7 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
   /* Prevent uninit-warning.  */
   reference_type = NULL_TREE;
   last_type = gfc_typenode_for_spec (&expr->symtree->n.sym->ts);
+  last_type_n = expr->symtree->n.sym->ts.type;
   while (ref)
     {
       if (ref->type == REF_ARRAY && ref->u.ar.codimen > 0
@@ -1163,6 +1164,7 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 	{
 	case REF_COMPONENT:
 	  last_type = gfc_typenode_for_spec (&ref->u.c.component->ts);
+	  last_type_n = ref->u.c.component->ts.type;
 	  /* Set the type of the ref.  */
 	  field = gfc_advance_chain (TYPE_FIELDS (reference_type), 1);
 	  tmp = fold_build3_loc (input_location, COMPONENT_REF,
@@ -1250,13 +1252,24 @@ conv_expr_ref_to_caf_ref (stmtblock_t *block, gfc_expr *expr)
 				       TREE_TYPE (field), tmp, field,
 				       NULL_TREE);
 
+	  /* Set the static_array_type in a for static arrays.  */
+	  if (ref_static_array)
+	    {
+	      field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (inner_struct)),
+					 1);
+	      tmp = fold_build3_loc (input_location, COMPONENT_REF,
+				     TREE_TYPE (field), inner_struct, field,
+				     NULL_TREE);
+	      gfc_add_modify (block, tmp, build_int_cst (TREE_TYPE (tmp),
+							 last_type_n));
+	    }
 	  /* Ref the mode in the inner_struct. */
 	  field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (inner_struct)), 0);
 	  mode = fold_build3_loc (input_location, COMPONENT_REF,
 				  TREE_TYPE (field), inner_struct, field,
 				  NULL_TREE);
 	  /* Ref the dim in the inner_struct. */
-	  field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (inner_struct)), 1);
+	  field = gfc_advance_chain (TYPE_FIELDS (TREE_TYPE (inner_struct)), 2);
 	  dim_array = fold_build3_loc (input_location, COMPONENT_REF,
 				       TREE_TYPE (field), inner_struct, field,
 				       NULL_TREE);
@@ -1917,6 +1930,9 @@ conv_caf_send (gfc_code *code) {
 				 build_empty_stmt (input_location));
 	  gfc_add_expr_to_block (&block, tmp);
 	}
+      else
+	lhs_may_realloc = lhs_may_realloc
+	    && gfc_full_array_ref_p (lhs_expr->ref, NULL);
       gfc_add_block_to_block (&block, &lhs_se.pre);
       gfc_conv_intrinsic_caf_get (&rhs_se, rhs_expr, lhs_se.expr, lhs_kind,
 				  may_require_tmp, lhs_may_realloc,
