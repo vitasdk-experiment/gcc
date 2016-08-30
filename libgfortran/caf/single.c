@@ -1901,31 +1901,36 @@ send_by_ref (caf_reference_t *ref, size_t *i, size_t *src_index,
 	    {
 	      if (*(void**)(ds + ref->u.c.offset) == NULL)
 		{
-		  /* TODO: Check that this is correct.  */
-		  dst = (gfc_descriptor_t *)
-		      malloc (sizeof (gfc_descriptor_t));
-		  GFC_DESCRIPTOR_DATA (dst) = NULL;
-		  GFC_DESCRIPTOR_DTYPE (dst) =
+		  /* Create a scalar temporary array descriptor.  */
+		  gfc_descriptor_t static_dst;
+		  GFC_DESCRIPTOR_DATA (&static_dst) = NULL;
+		  GFC_DESCRIPTOR_DTYPE (&static_dst) =
 		      GFC_DESCRIPTOR_DTYPE (src);
 		  /* The component may be allocated now, because it is a
-				 scalar.  */
+		     scalar.  */
 		  single_token = *(caf_single_token_t*)
 					       (ds + ref->u.c.caf_token_offset);
 		  _gfortran_caf_register (ref->item_size,
 					  CAF_REGTYPE_COARRAY_ALLOC,
 					  (caf_token_t *)&single_token,
-					  dst, stat, NULL, 0);
+					  &static_dst, stat, NULL, 0);
 		  /* In case of an error in allocation return.  When stat is
 		     NULL, then register_component() terminates on error.  */
 		  if (stat != NULL && *stat)
 		    return;
 		  /* Publish the allocated memory.  */
 		  *((void **)(ds + ref->u.c.offset)) =
-		      GFC_DESCRIPTOR_DATA (dst);
-		  /* The memptr, descriptor and the token are set below.  */
+		      GFC_DESCRIPTOR_DATA (&static_dst);
+		  ds = GFC_DESCRIPTOR_DATA (&static_dst);
+		  /* Set the type from the src.  */
+		  dst_type = GFC_DESCRIPTOR_TYPE (src);
 		}
-	      copy_data (GFC_DESCRIPTOR_DATA (dst), sr,
-			 GFC_DESCRIPTOR_TYPE (dst), GFC_DESCRIPTOR_TYPE (src),
+	      else
+		{
+		  ds = GFC_DESCRIPTOR_DATA (dst);
+		  dst_type = GFC_DESCRIPTOR_TYPE (dst);
+		}
+	      copy_data (ds, sr, dst_type, GFC_DESCRIPTOR_TYPE (src),
 		  dst_kind, src_kind, ref->item_size, src_size, 1, stat);
 	    }
 	  else

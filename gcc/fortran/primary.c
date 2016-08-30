@@ -2492,12 +2492,6 @@ caf_variable_attr (gfc_expr *expr, bool in_allocate)
 }
 
 
-/* Given an expression, figure out what the ultimate expression
-   attribute is.  This routine is similar to gfc_variable_attr with
-   parts of gfc_expr_attr, but focuses more on the needs of
-   coarrays.  For coarrays a codimension attribute is kind of
-   "infectious" being propagated once set and never cleared.  */
-
 symbol_attribute
 gfc_caf_attr (gfc_expr *e, bool in_allocate)
 {
@@ -2528,10 +2522,6 @@ gfc_caf_attr (gfc_expr *e, bool in_allocate)
 	attr = caf_variable_attr (e, in_allocate);
       else
 	gfc_clear_attr (&attr);
-
-      /* TODO: NULL() returns pointers.  May have to take care of this
-	 here.  */
-
       break;
 
     default:

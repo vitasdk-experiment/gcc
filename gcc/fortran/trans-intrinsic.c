@@ -1604,7 +1604,10 @@ gfc_conv_intrinsic_caf_get (gfc_se *se, gfc_expr *expr, tree lhs, tree lhs_kind,
   else
     stat = null_pointer_node;
 
-  if (true) //caf_attr->alloc_comp)
+  /* Always use the new get_by_ref ().  When no allocatable components are
+     present and the lhs does not reallocation then the "old" get () might
+     suffice.  */
+  if (true) //caf_attr->alloc_comp && !may_realloc)
     {
       /* Get using caf_get_by_ref.  */
       caf_reference = conv_expr_ref_to_caf_ref (&se->pre, array_expr);
