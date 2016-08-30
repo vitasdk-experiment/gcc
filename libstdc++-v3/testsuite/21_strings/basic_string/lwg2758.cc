@@ -1,7 +1,7 @@
+// { dg-options "-std=gnu++17" }
 // { dg-do compile }
-// { dg-options "-std=gnu++11" }
 
-// Copyright (C) 2010-2016 Free Software Foundation, Inc.
+// Copyright (C) 2016 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -18,16 +18,29 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
-#include <iterator>
+#include <string>
 
-namespace std
+struct CustomString
 {
-  template<class C> auto begin(C& c) -> decltype(c.begin());
-  template<class C> auto begin(const C& c) -> decltype(c.begin());
+  std::string data = "foo";
+  std::string_view data_view = data;
+  operator std::string_view() const {return data_view;}
+};
 
-  template<class C> auto end(C& c) -> decltype(c.end());
-  template<class C> auto end(const C& c) -> decltype(c.end());
-
-  template<class T, size_t N> T* begin(T (&array)[N]);
-  template<class T, size_t N> T* end(T (&array)[N]);
+int main()
+{
+    std::string x;
+    CustomString cs;
+    x.append("foo", 0, 3);
+    x.append(cs, 0, 3);
+    x.assign("foo", 0, 3);
+    x.assign(cs, 0, 3);
+    x.insert(0, "foo", 0, 3);
+    x.insert(0, cs, 0, 3);
+    x = "bar";
+    x.replace(0, 3, "foo", 0, 3);
+    x.replace(0, 3, cs, 0, 3);
+    x = "bar";
+    x.compare(0, 3, "foo", 0, 3);
+    x.compare(0, 3, cs, 0, 3);
 }

@@ -296,6 +296,16 @@ struct GTY(()) source_range
     return result;
   }
 
+  /* Make a source_range from a pair of source_location.  */
+  static source_range from_locations (source_location start,
+				      source_location finish)
+  {
+    source_range result;
+    result.m_start = start;
+    result.m_finish = finish;
+    return result;
+  }
+
   /* Is there any part of this range on the given line?  */
   bool intersects_line_p (const char *file, int line) const;
 };
@@ -992,6 +1002,12 @@ IS_ADHOC_LOC (source_location loc)
 bool
 pure_location_p (line_maps *set, source_location loc);
 
+/* Given location LOC within SET, strip away any packed range information
+   or ad-hoc information.  */
+
+extern source_location get_pure_location (line_maps *set,
+					  source_location loc);
+
 /* Combine LOC and BLOCK, giving a combined adhoc location.  */
 
 inline source_location
@@ -1357,9 +1373,6 @@ class rich_location
   /* Constructing from a location.  */
   rich_location (line_maps *set, source_location loc);
 
-  /* Constructing from a source_range.  */
-  rich_location (source_range src_range);
-
   /* Destructor.  */
   ~rich_location ();
 
@@ -1401,12 +1414,17 @@ class rich_location
 
   unsigned int get_num_fixit_hints () const { return m_num_fixit_hints; }
   fixit_hint *get_fixit_hint (int idx) const { return m_fixit_hints[idx]; }
+  fixit_hint *get_last_fixit_hint () const;
+
+private:
+  bool reject_impossible_fixit (source_location where);
 
 public:
   static const int MAX_RANGES = 3;
   static const int MAX_FIXIT_HINTS = 2;
 
 protected:
+  line_maps *m_line_table;
   unsigned int m_num_ranges;
   location_range m_ranges[MAX_RANGES];
 
@@ -1417,12 +1435,13 @@ protected:
 
   unsigned int m_num_fixit_hints;
   fixit_hint *m_fixit_hints[MAX_FIXIT_HINTS];
+  bool m_seen_impossible_fixit;
 };
 
 class fixit_hint
 {
 public:
-  enum kind {INSERT, REMOVE, REPLACE};
+  enum kind {INSERT, REPLACE};
 
   virtual ~fixit_hint () {}
 
@@ -1430,6 +1449,10 @@ public:
   virtual bool affects_line_p (const char *file, int line) = 0;
   virtual source_location get_start_loc () const = 0;
   virtual bool maybe_get_end_loc (source_location *out) const = 0;
+  /* Vfunc for consolidating successor fixits.  */
+  virtual bool maybe_append_replace (line_maps *set,
+				     source_range src_range,
+				     const char *new_content) = 0;
 };
 
 class fixit_insert : public fixit_hint
@@ -1442,6 +1465,9 @@ class fixit_insert : public fixit_hint
   bool affects_line_p (const char *file, int line);
   source_location get_start_loc () const { return m_where; }
   bool maybe_get_end_loc (source_location *) const { return false; }
+  bool maybe_append_replace (line_maps *set,
+			     source_range src_range,
+			     const char *new_content);
 
   source_location get_location () const { return m_where; }
   const char *get_string () const { return m_bytes; }
@@ -1451,27 +1477,6 @@ class fixit_insert : public fixit_hint
   source_location m_where;
   char *m_bytes;
   size_t m_len;
-};
-
-class fixit_remove : public fixit_hint
-{
- public:
-  fixit_remove (source_range src_range);
-  ~fixit_remove () {}
-
-  enum kind get_kind () const { return REMOVE; }
-  bool affects_line_p (const char *file, int line);
-  source_location get_start_loc () const { return m_src_range.m_start; }
-  bool maybe_get_end_loc (source_location *out) const
-  {
-    *out = m_src_range.m_finish;
-    return true;
-  }
-
-  source_range get_range () const { return m_src_range; }
-
- private:
-  source_range m_src_range;
 };
 
 class fixit_replace : public fixit_hint
@@ -1489,6 +1494,9 @@ class fixit_replace : public fixit_hint
     *out = m_src_range.m_finish;
     return true;
   }
+  bool maybe_append_replace (line_maps *set,
+			     source_range src_range,
+			     const char *new_content);
 
   source_range get_range () const { return m_src_range; }
   const char *get_string () const { return m_bytes; }
