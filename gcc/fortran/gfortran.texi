@@ -3602,11 +3602,7 @@ caf_register_t;
 
 The structure used for implementing arbitrary reference chains.
 A @code{CAF_REFERENCE_T} allows to specify a component reference or any kind
-of array reference of any rank.  For component references both kinds
-allocatable/pointer and non-allocatable/pointer kinds are supported.  For
-allocatable/pointer components additionally to the byte offset an index out of
-the range 0 to @code{number of allocatable/pointer components} is supplied to
-precisely identify the memory of that component.  For array references all
+of array reference of any rank supported by gfortran.  For array references all
 kinds as known by the compiler/Fortran standard are supported indicated by
 a @code{MODE}.
 
@@ -3653,7 +3649,7 @@ typedef struct caf_reference_t {
   /* A pointer to the next ref or NULL.  */
   struct caf_reference_t *next;
   /* The type of the reference.  */
-  /* caf_ref_type_t */
+  /* caf_ref_type_t, replaced by int to allow specification in fortran FE.  */
   int type;
   /* The size of an item referenced in bytes.  I.e. in an array ref this is
      the factor to advance the array pointer with to get to the next item.
@@ -3670,8 +3666,11 @@ typedef struct caf_reference_t {
     } c;
     struct {
       /* The mode of the array ref.  See CAF_ARR_REF_*.  */
-      /* caf_array_ref_t */
-      unsigned char mode[GFC_MAX_DIMENSIONS];
+      /* caf_array_ref_t, replaced by unsigend char to allow specification in
+         fortran FE.  */
+     unsigned char mode[GFC_MAX_DIMENSIONS];
+      /* The type of a static array.  Unset for array's with descriptors.  */
+      int static_array_type;
       /* Subscript refs (s) or vector refs (v).  */
       union {
         struct {
@@ -3691,6 +3690,20 @@ typedef struct caf_reference_t {
   } u;
 } caf_reference_t;
 @end verbatim
+
+The references make up a single linked list of reference operations.  The
+@code{NEXT} member links to the next reference or NULL to indicate the end of
+the chain.  Component and array refs can be arbitrarly mixed as long as they
+comply to the Fortran standard.
+
+@emph{NOTES}
+The member @code{STATIC_ARRAY_TYPE} is used only when the @code{TYPE} is
+@code{CAF_REF_STATIC_ARRAY}.  The member gives the type of the data referenced.
+Because no array descriptor is available for a descriptor-less array and
+type conversion still needs to take place the type is transported here.
+
+At the moment @code{CAF_ARR_REF_VECTOR} is not implemented in the front end for
+descriptor-less arrays.  The library caf_single has untested support for it.
 
 
 @node Function ABI Documentation

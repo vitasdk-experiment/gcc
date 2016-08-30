@@ -126,7 +126,7 @@ typedef struct caf_reference_t {
   /* A pointer to the next ref or NULL.  */
   struct caf_reference_t *next;
   /* The type of the reference.  */
-  /* caf_ref_type_t */
+  /* caf_ref_type_t, replaced by int to allow specification in fortran FE.  */
   int type;
   /* The size of an item referenced in bytes.  I.e. in an array ref this is
      the factor to advance the array pointer with to get to the next item.
@@ -142,7 +142,8 @@ typedef struct caf_reference_t {
     } c;
     struct {
       /* The mode of the array ref.  See CAF_ARR_REF_*.  */
-      /* caf_array_ref_t */
+      /* caf_array_ref_t, replaced by unsigend char to allow specification in
+	 fortran FE.  */
       unsigned char mode[GFC_MAX_DIMENSIONS];
       /* The type of a static array.  Unset for array's with descriptors.  */
       int static_array_type;
