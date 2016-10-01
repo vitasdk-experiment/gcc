@@ -189,6 +189,8 @@ arm_cpu_cpp_builtins (struct cpp_reader * pfile)
   builtin_assert ("cpu=arm");
   builtin_assert ("machine=arm");
 
+  builtin_define ("__vita__");
+
   arm_cpu_builtins (pfile);
 }
 

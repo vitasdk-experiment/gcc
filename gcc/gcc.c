@@ -658,8 +658,9 @@ proper position among the other output files.  */
 #endif
 
 /* config.h can define LIB_SPEC to override the default libraries.  */
+#undef LIB_SPEC
 #ifndef LIB_SPEC
-#define LIB_SPEC "%{!shared:%{g*:-lg} %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"
+#define LIB_SPEC "%{!shared:%{g*:-lg} %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}} -lSceRtc_stub -lSceKernel_stub -lSceNet_stub"
 #endif
 
 /* When using -fsplit-stack we need to wrap pthread_create, in order
